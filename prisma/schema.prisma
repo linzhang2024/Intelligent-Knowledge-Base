@@ -42,13 +42,14 @@ model Document {
   content         String?
   fileUrl         String?
   fileType        String?
+  fileSize        BigInt?
   status          DocumentStatus @default(DRAFT)
-  authorId        String
+  authorId        String?
   knowledgeBaseId String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  author          User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author          User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
 
   @@map("documents")

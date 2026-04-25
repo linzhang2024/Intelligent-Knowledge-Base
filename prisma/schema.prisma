@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String?
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  documents     Document[]
+  knowledgeBases KnowledgeBase[]
+
+  @@map("users")
+}
+
+model KnowledgeBase {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  ownerId       String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  documents     Document[]
+
+  @@map("knowledge_bases")
+}
+
+model Document {
+  id              String      @id @default(cuid())
+  title           String
+  content         String?
+  fileUrl         String?
+  fileType        String?
+  status          DocumentStatus @default(DRAFT)
+  authorId        String
+  knowledgeBaseId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  author          User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
+
+  @@map("documents")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum DocumentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}

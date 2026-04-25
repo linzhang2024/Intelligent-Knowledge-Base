@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const currentUserId = getCurrentUserId(request);
+    
+    if (!currentUserId) {
+      return NextResponse.json(
+        { message: "未登录，请先登录" },
+        { status: 401 }
+      );
+    }
+
     const kbId = params.id;
 
     const knowledgeBase = await prisma.knowledgeBase.findUnique({
@@ -39,6 +49,13 @@ export async function GET(
       return NextResponse.json(
         { message: "知识库不存在" },
         { status: 404 }
+      );
+    }
+
+    if (knowledgeBase.ownerId !== currentUserId) {
+      return NextResponse.json(
+        { message: "无权限访问此知识库" },
+        { status: 403 }
       );
     }
 

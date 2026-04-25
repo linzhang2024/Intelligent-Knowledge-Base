@@ -1,4 +1,4 @@
-import { formatFileSize } from "../src/lib/utils";
+import { formatFileSize } from "../src/lib/format";
 
 interface TestCase {
   input: bigint | number | null | undefined;

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import prisma from "@/lib/prisma";
 import { notFound } from "next/navigation";
-import { formatFileSize } from "@/lib/utils";
+import { formatFileSize, formatDate, formatDateTime } from "@/lib/format";
 
 interface DocumentDetailPageProps {
   params: {
@@ -21,24 +21,6 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
   if (!document) {
     notFound();
   }
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-  };
-
-  const formatDateTime = (date: Date) => {
-    return date.toLocaleString("zh-CN", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
 
   const getStatusText = (status: string) => {
     const statusMap: Record<string, string> = {

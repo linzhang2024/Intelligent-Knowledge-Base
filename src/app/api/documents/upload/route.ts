@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import prisma from "@/lib/prisma";
+import { formatFileSize } from "@/lib/utils";
 
 const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
         document: {
           ...document,
           fileSize: document.fileSize.toString(),
+          formattedSize: formatFileSize(document.fileSize),
         },
       },
       { status: 201 }
@@ -96,12 +98,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes === 0) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }

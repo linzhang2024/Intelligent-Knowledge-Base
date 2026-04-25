@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { formatFileSize } from "@/lib/utils";
+import { formatFileSize } from "@/lib/format";
 
 type TabType = "overview" | "users" | "documents" | "knowledge-bases" | "settings";
 

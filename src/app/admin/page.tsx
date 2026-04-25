@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { formatFileSize } from "@/lib/utils";
 
 type TabType = "overview" | "users" | "documents" | "knowledge-bases" | "settings";
 
@@ -23,10 +24,10 @@ export default function AdminPage() {
   ];
 
   const mockDocuments = [
-    { id: "1", title: "API 接口规范 v2.0", author: "张三", status: "PUBLISHED", updatedAt: "2024-01-15" },
-    { id: "2", title: "数据库设计文档", author: "李四", status: "DRAFT", updatedAt: "2024-01-14" },
-    { id: "3", title: "前端代码规范", author: "王五", status: "PUBLISHED", updatedAt: "2024-01-13" },
-    { id: "4", title: "系统架构说明", author: "张三", status: "ARCHIVED", updatedAt: "2024-01-10" },
+    { id: "1", title: "API 接口规范 v2.0", author: "张三", status: "PUBLISHED", updatedAt: "2024-01-15", fileSize: 1536000 },
+    { id: "2", title: "数据库设计文档", author: "李四", status: "DRAFT", updatedAt: "2024-01-14", fileSize: 512000 },
+    { id: "3", title: "前端代码规范", author: "王五", status: "PUBLISHED", updatedAt: "2024-01-13", fileSize: 256000 },
+    { id: "4", title: "系统架构说明", author: "张三", status: "ARCHIVED", updatedAt: "2024-01-10", fileSize: 3145728 },
   ];
 
   const mockKnowledgeBases = [
@@ -223,6 +224,7 @@ export default function AdminPage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">文档标题</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">作者</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">文件大小</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">更新时间</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                       </tr>
@@ -238,6 +240,9 @@ export default function AdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {getStatusBadge(doc.status)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatFileSize(doc.fileSize)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             {doc.updatedAt}

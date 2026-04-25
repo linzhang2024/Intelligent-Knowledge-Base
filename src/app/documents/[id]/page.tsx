@@ -1,6 +1,7 @@
 import Link from "next/link";
 import prisma from "@/lib/prisma";
 import { notFound } from "next/navigation";
+import { formatFileSize } from "@/lib/utils";
 
 interface DocumentDetailPageProps {
   params: {
@@ -37,16 +38,6 @@ export default async function DocumentDetailPage({ params }: DocumentDetailPageP
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
-
-  const formatFileSize = (bytes: bigint | null) => {
-    if (!bytes) return "未知";
-    const bytesNum = Number(bytes);
-    if (bytesNum === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytesNum) / Math.log(k));
-    return parseFloat((bytesNum / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   const getStatusText = (status: string) => {

@@ -1,53 +1,73 @@
-"use client";
-
-import { useParams } from "next/navigation";
 import Link from "next/link";
+import prisma from "@/lib/prisma";
+import { notFound } from "next/navigation";
 
-export default function DocumentDetailPage() {
-  const params = useParams();
-  const documentId = params.id as string;
+interface DocumentDetailPageProps {
+  params: {
+    id: string;
+  };
+}
 
-  const mockDocument = {
-    id: documentId,
-    title: "API 接口规范 v2.0",
-    content: `# API 接口规范 v2.0
+export default async function DocumentDetailPage({ params }: DocumentDetailPageProps) {
+  const documentId = params.id;
 
-## 1. 概述
-本文档描述了系统 API 接口的设计规范和使用指南。
+  const document = await prisma.document.findUnique({
+    where: {
+      id: documentId,
+    },
+  });
 
-## 2. 接口规范
+  if (!document) {
+    notFound();
+  }
 
-### 2.1 RESTful 风格
-所有接口遵循 RESTful 架构风格：
-- GET: 获取资源
-- POST: 创建资源
-- PUT: 更新资源
-- DELETE: 删除资源
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  };
 
-### 2.2 数据格式
-- 请求和响应均使用 JSON 格式
-- 日期时间格式: ISO 8601 (YYYY-MM-DDTHH:mm:ssZ)
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
 
-## 3. 认证方式
-所有 API 请求需要在 Header 中携带认证信息：
-\`\`\`
-Authorization: Bearer <token>
-\`\`\`
+  const formatFileSize = (bytes: bigint | null) => {
+    if (!bytes) return "未知";
+    const bytesNum = Number(bytes);
+    if (bytesNum === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytesNum) / Math.log(k));
+    return parseFloat((bytesNum / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
 
-## 4. 错误处理
-服务器返回标准的 HTTP 状态码：
-- 200: 成功
-- 400: 请求参数错误
-- 401: 未认证
-- 403: 无权限
-- 404: 资源不存在
-- 500: 服务器错误`,
-    author: "张三",
-    createdAt: "2024-01-10",
-    updatedAt: "2024-01-15",
-    status: "已发布",
-    fileUrl: "/files/api-spec.pdf",
-    fileType: "PDF",
+  const getStatusText = (status: string) => {
+    const statusMap: Record<string, string> = {
+      DRAFT: "草稿",
+      PUBLISHED: "已发布",
+      ARCHIVED: "已归档",
+    };
+    return statusMap[status] || status;
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case "PUBLISHED":
+        return "bg-green-100 text-green-800";
+      case "ARCHIVED":
+        return "bg-gray-100 text-gray-800";
+      case "DRAFT":
+      default:
+        return "bg-yellow-100 text-yellow-800";
+    }
   };
 
   return (
@@ -62,23 +82,28 @@ Authorization: Bearer <token>
               ← 返回
             </Link>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">{mockDocument.title}</h1>
+              <h1 className="text-xl font-bold text-gray-900">{document.title}</h1>
               <div className="flex items-center space-x-4 mt-1">
-                <span className="text-sm text-gray-500">作者: {mockDocument.author}</span>
-                <span className="text-sm text-gray-500">更新于: {mockDocument.updatedAt}</span>
+                <span className="text-sm text-gray-500">创建于: {formatDate(document.createdAt)}</span>
+                <span className="text-sm text-gray-500">更新于: {formatDate(document.updatedAt)}</span>
                 <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${mockDocument.status === "已发布" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(document.status)}`}
                 >
-                  {mockDocument.status}
+                  {getStatusText(document.status)}
                 </span>
               </div>
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            {mockDocument.fileUrl && (
-              <button className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            {document.fileUrl && (
+              <a
+                href={document.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
                 📥 下载附件
-              </button>
+              </a>
             )}
             <button className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
               ✏️ 编辑
@@ -88,30 +113,50 @@ Authorization: Bearer <token>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white shadow-sm rounded-lg p-8">
-          <div className="prose max-w-none">
-            <div className="whitespace-pre-wrap text-gray-700 leading-relaxed">
-              {mockDocument.content}
+        {document.content && (
+          <div className="bg-white shadow-sm rounded-lg p-8 mb-8">
+            <div className="prose max-w-none">
+              <div className="whitespace-pre-wrap text-gray-700 leading-relaxed">
+                {document.content}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white shadow-sm rounded-lg p-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">文档信息</h3>
             <dl className="space-y-3">
               <div className="flex justify-between">
+                <dt className="text-sm text-gray-500">文档ID</dt>
+                <dd className="text-sm text-gray-900 font-mono">{document.id}</dd>
+              </div>
+              <div className="flex justify-between">
                 <dt className="text-sm text-gray-500">创建时间</dt>
-                <dd className="text-sm text-gray-900">{mockDocument.createdAt}</dd>
+                <dd className="text-sm text-gray-900">{formatDateTime(document.createdAt)}</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-sm text-gray-500">最后更新</dt>
-                <dd className="text-sm text-gray-900">{mockDocument.updatedAt}</dd>
+                <dd className="text-sm text-gray-900">{formatDateTime(document.updatedAt)}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-sm text-gray-500">附件类型</dt>
-                <dd className="text-sm text-gray-900">{mockDocument.fileType || "无"}</dd>
-              </div>
+              {document.fileType && (
+                <div className="flex justify-between">
+                  <dt className="text-sm text-gray-500">附件类型</dt>
+                  <dd className="text-sm text-gray-900">{document.fileType}</dd>
+                </div>
+              )}
+              {document.fileSize && (
+                <div className="flex justify-between">
+                  <dt className="text-sm text-gray-500">文件大小</dt>
+                  <dd className="text-sm text-gray-900">{formatFileSize(document.fileSize)}</dd>
+                </div>
+              )}
+              {document.knowledgeBaseId && (
+                <div className="flex justify-between">
+                  <dt className="text-sm text-gray-500">所属知识库</dt>
+                  <dd className="text-sm text-gray-900">{document.knowledgeBaseId}</dd>
+                </div>
+              )}
             </dl>
           </div>
 
@@ -120,24 +165,13 @@ Authorization: Bearer <token>
             <div className="space-y-4">
               <div className="flex items-start">
                 <div className="flex-shrink-0">
-                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                    <span className="text-green-600 text-sm">✓</span>
-                  </div>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-gray-900">文档已发布</p>
-                  <p className="text-xs text-gray-500">2024-01-15 10:30</p>
-                </div>
-              </div>
-              <div className="flex items-start">
-                <div className="flex-shrink-0">
                   <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
                     <span className="text-blue-600 text-sm">✏️</span>
                   </div>
                 </div>
                 <div className="ml-3">
                   <p className="text-sm text-gray-900">内容已更新</p>
-                  <p className="text-xs text-gray-500">2024-01-12 14:20</p>
+                  <p className="text-xs text-gray-500">{formatDateTime(document.updatedAt)}</p>
                 </div>
               </div>
               <div className="flex items-start">
@@ -148,7 +182,7 @@ Authorization: Bearer <token>
                 </div>
                 <div className="ml-3">
                   <p className="text-sm text-gray-900">文档已创建</p>
-                  <p className="text-xs text-gray-500">2024-01-10 09:15</p>
+                  <p className="text-xs text-gray-500">{formatDateTime(document.createdAt)}</p>
                 </div>
               </div>
             </div>

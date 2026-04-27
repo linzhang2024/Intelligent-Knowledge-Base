@@ -245,6 +245,21 @@ export default function DocumentsPage() {
     });
   };
 
+  const handleLogout = async () => {
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+      if (response.ok) {
+        router.push("/login");
+        router.refresh();
+      }
+    } catch (error) {
+      console.error("登出失败:", error);
+      router.push("/login");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <PreviewModal
@@ -268,12 +283,12 @@ export default function DocumentsPage() {
             >
               前台
             </Link>
-            <Link
-              href="/login"
+            <button
+              onClick={handleLogout}
               className="text-sm text-gray-600 hover:text-gray-900"
             >
               退出
-            </Link>
+            </button>
           </div>
         </div>
       </header>

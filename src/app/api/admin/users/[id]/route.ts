@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/auth";
-
-export const USER_STATUS = {
-  PENDING: "PENDING",
-  ACTIVE: "ACTIVE",
-  BANNED: "BANNED",
-} as const;
-
-export type UserStatus = typeof USER_STATUS[keyof typeof USER_STATUS];
+import { requireAdmin, USER_STATUS } from "@/lib/auth";
 
 const VALID_ROLES = ["ADMIN", "EDITOR", "VIEWER"];
 const VALID_STATUSES = Object.values(USER_STATUS);
@@ -18,26 +10,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const currentUserId = getCurrentUserId(request);
-    
-    if (!currentUserId) {
-      return NextResponse.json(
-        { message: "未登录，请先登录" },
-        { status: 401 }
-      );
-    }
-
-    const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId, deletedAt: null },
-      select: { role: true },
-    });
-
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      return NextResponse.json(
-        { message: "无权限访问此资源" },
-        { status: 403 }
-      );
-    }
+    await requireAdmin(request);
 
     const userId = params.id;
 
@@ -107,6 +80,27 @@ export async function PATCH(
       { status: 200 }
     );
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "未授权访问") {
+        return NextResponse.json(
+          { message: "未登录，请先登录" },
+          { status: 401 }
+        );
+      }
+      if (error.message === "无权限访问此资源") {
+        return NextResponse.json(
+          { message: "无权限访问此资源" },
+          { status: 403 }
+        );
+      }
+      if (error.message === "账号待审核，请联系管理员" || 
+          error.message === "账号已被禁用，请联系管理员") {
+        return NextResponse.json(
+          { message: error.message },
+          { status: 403 }
+        );
+      }
+    }
     console.error("更新用户失败:", error);
     return NextResponse.json(
       { message: "更新用户失败，请稍后重试" },
@@ -120,30 +114,11 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const currentUserId = getCurrentUserId(request);
-    
-    if (!currentUserId) {
-      return NextResponse.json(
-        { message: "未登录，请先登录" },
-        { status: 401 }
-      );
-    }
-
-    const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId, deletedAt: null },
-      select: { role: true },
-    });
-
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      return NextResponse.json(
-        { message: "无权限访问此资源" },
-        { status: 403 }
-      );
-    }
+    const currentUser = await requireAdmin(request);
 
     const userId = params.id;
 
-    if (userId === currentUserId) {
+    if (userId === currentUser.id) {
       return NextResponse.json(
         { message: "不能删除自己的账户" },
         { status: 400 }
@@ -173,6 +148,27 @@ export async function DELETE(
       { status: 200 }
     );
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "未授权访问") {
+        return NextResponse.json(
+          { message: "未登录，请先登录" },
+          { status: 401 }
+        );
+      }
+      if (error.message === "无权限访问此资源") {
+        return NextResponse.json(
+          { message: "无权限访问此资源" },
+          { status: 403 }
+        );
+      }
+      if (error.message === "账号待审核，请联系管理员" || 
+          error.message === "账号已被禁用，请联系管理员") {
+        return NextResponse.json(
+          { message: error.message },
+          { status: 403 }
+        );
+      }
+    }
     console.error("删除用户失败:", error);
     return NextResponse.json(
       { message: "删除用户失败，请稍后重试" },

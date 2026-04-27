@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import path from "path";
 import prisma from "@/lib/prisma";
 import { formatFileSize } from "@/lib/format";
-import { getCurrentUserId } from "@/lib/auth";
+import { requireAuth, getCurrentUserId } from "@/lib/auth";
 
 const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
@@ -34,11 +34,6 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
     return pdfData.text || "";
   } catch (error) {
     console.error("PDF 文本提取失败:", error);
-    console.error("错误类型:", typeof error);
-    if (error instanceof Error) {
-      console.error("错误消息:", error.message);
-      console.error("错误堆栈:", error.stack);
-    }
     return "";
   }
 }
@@ -55,14 +50,8 @@ async function extractTextFromTXT(filePath: string): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
-    const currentUserId = getCurrentUserId(request);
-    
-    if (!currentUserId) {
-      return NextResponse.json(
-        { message: "未登录，请先登录" },
-        { status: 401 }
-      );
-    }
+    const user = await requireAuth(request);
+    const currentUserId = user.id;
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -147,6 +136,21 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "未授权访问") {
+        return NextResponse.json(
+          { message: "未登录，请先登录" },
+          { status: 401 }
+        );
+      }
+      if (error.message === "账号待审核，请联系管理员" || 
+          error.message === "账号已被禁用，请联系管理员") {
+        return NextResponse.json(
+          { message: error.message },
+          { status: 403 }
+        );
+      }
+    }
     console.error("文件上传失败:", error);
     return NextResponse.json(
       { message: "上传失败，请稍后重试" },

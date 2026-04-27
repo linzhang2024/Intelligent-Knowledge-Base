@@ -1,37 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/auth";
-
-export const USER_STATUS = {
-  PENDING: "PENDING",
-  ACTIVE: "ACTIVE",
-  BANNED: "BANNED",
-} as const;
-
-export type UserStatus = typeof USER_STATUS[keyof typeof USER_STATUS];
+import { requireAdmin, USER_STATUS } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   try {
-    const currentUserId = getCurrentUserId(request);
-    
-    if (!currentUserId) {
-      return NextResponse.json(
-        { message: "未登录，请先登录" },
-        { status: 401 }
-      );
-    }
-
-    const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId, deletedAt: null },
-      select: { role: true },
-    });
-
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      return NextResponse.json(
-        { message: "无权限访问此资源" },
-        { status: 403 }
-      );
-    }
+    await requireAdmin(request);
 
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1", 10);
@@ -84,6 +57,27 @@ export async function GET(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "未授权访问") {
+        return NextResponse.json(
+          { message: "未登录，请先登录" },
+          { status: 401 }
+        );
+      }
+      if (error.message === "无权限访问此资源") {
+        return NextResponse.json(
+          { message: "无权限访问此资源" },
+          { status: 403 }
+        );
+      }
+      if (error.message === "账号待审核，请联系管理员" || 
+          error.message === "账号已被禁用，请联系管理员") {
+        return NextResponse.json(
+          { message: error.message },
+          { status: 403 }
+        );
+      }
+    }
     console.error("获取用户列表失败:", error);
     return NextResponse.json(
       { message: "获取用户列表失败，请稍后重试" },
@@ -94,26 +88,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const currentUserId = getCurrentUserId(request);
-    
-    if (!currentUserId) {
-      return NextResponse.json(
-        { message: "未登录，请先登录" },
-        { status: 401 }
-      );
-    }
-
-    const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId, deletedAt: null },
-      select: { role: true },
-    });
-
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      return NextResponse.json(
-        { message: "无权限访问此资源" },
-        { status: 403 }
-      );
-    }
+    await requireAdmin(request);
 
     const body = await request.json();
     const { action, userIds } = body;
@@ -167,6 +142,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "delete") {
+      const currentUserId = request.cookies.get("kb_user_id")?.value;
+      
       const result = await prisma.user.updateMany({
         where: {
           id: { in: userIds },
@@ -192,6 +169,27 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "未授权访问") {
+        return NextResponse.json(
+          { message: "未登录，请先登录" },
+          { status: 401 }
+        );
+      }
+      if (error.message === "无权限访问此资源") {
+        return NextResponse.json(
+          { message: "无权限访问此资源" },
+          { status: 403 }
+        );
+      }
+      if (error.message === "账号待审核，请联系管理员" || 
+          error.message === "账号已被禁用，请联系管理员") {
+        return NextResponse.json(
+          { message: error.message },
+          { status: 403 }
+        );
+      }
+    }
     console.error("批量操作用户失败:", error);
     return NextResponse.json(
       { message: "批量操作失败，请稍后重试" },

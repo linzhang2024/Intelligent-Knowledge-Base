@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 
 export const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
@@ -14,26 +14,7 @@ const VALID_STATUSES = Object.values(DOCUMENT_STATUS);
 
 export async function GET(request: NextRequest) {
   try {
-    const currentUserId = getCurrentUserId(request);
-    
-    if (!currentUserId) {
-      return NextResponse.json(
-        { message: "未登录，请先登录" },
-        { status: 401 }
-      );
-    }
-
-    const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId, deletedAt: null },
-      select: { role: true },
-    });
-
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      return NextResponse.json(
-        { message: "无权限访问此资源" },
-        { status: 403 }
-      );
-    }
+    await requireAdmin(request);
 
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1", 10);
@@ -106,6 +87,27 @@ export async function GET(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "未授权访问") {
+        return NextResponse.json(
+          { message: "未登录，请先登录" },
+          { status: 401 }
+        );
+      }
+      if (error.message === "无权限访问此资源") {
+        return NextResponse.json(
+          { message: "无权限访问此资源" },
+          { status: 403 }
+        );
+      }
+      if (error.message === "账号待审核，请联系管理员" || 
+          error.message === "账号已被禁用，请联系管理员") {
+        return NextResponse.json(
+          { message: error.message },
+          { status: 403 }
+        );
+      }
+    }
     console.error("获取文档列表失败:", error);
     return NextResponse.json(
       { message: "获取文档列表失败，请稍后重试" },

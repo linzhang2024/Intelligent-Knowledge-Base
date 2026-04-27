@@ -137,6 +137,30 @@ function extractCookieValue(cookies, cookieName) {
   return '';
 }
 
+async function registerUser(email, password, name = undefined) {
+  console.log(`   注册用户: ${email}`);
+  const body = { email, password };
+  if (name) body.name = name;
+  
+  const response = await makeRequest('/api/auth/register', {
+    method: 'POST',
+    body
+  });
+  
+  if (response.status === 200 || response.status === 201) {
+    console.log(`   ✓ 注册成功，状态: ${response.data.user?.status || 'PENDING'}`);
+    return { 
+      success: true, 
+      userId: response.data.user?.id, 
+      user: response.data.user,
+      isFirstUser: response.data.isFirstUser
+    };
+  } else {
+    console.log(`   ✗ 注册失败: ${response.data.message}`);
+    return { success: false, status: response.status, message: response.data.message };
+  }
+}
+
 async function loginUser(email, password) {
   console.log(`   登录用户: ${email}`);
   const response = await makeRequest('/api/auth/login', {
@@ -212,13 +236,30 @@ async function runTests() {
       process.exit(1);
     }
 
-    console.log('\n测试 1.2: 创建/登录管理员用户');
-    const adminLogin = await loginUser('admin-doc-flow-test@example.com', 'admin123');
+    console.log('\n测试 1.2: 注册/登录管理员用户');
+    console.log('   尝试登录现有管理员用户...');
+    let adminLogin = await loginUser('admin-doc-flow-test@example.com', 'admin123');
+    
     if (adminLogin.cookie) {
       adminUser = adminLogin;
-      addTestResult('管理员用户登录', true, '用户已创建/登录成功');
+      addTestResult('管理员用户登录', true, '用户已存在，登录成功');
+    } else if (adminLogin.status === 401 && adminLogin.message === '用户不存在，请先注册') {
+      console.log('   用户不存在，尝试注册为第一个用户（自动成为管理员）...');
+      const adminRegister = await registerUser('admin-doc-flow-test@example.com', 'admin123', 'Admin Test User');
+      
+      if (adminRegister.success) {
+        adminLogin = await loginUser('admin-doc-flow-test@example.com', 'admin123');
+        if (adminLogin.cookie) {
+          adminUser = adminLogin;
+          addTestResult('管理员用户登录', true, '用户已注册并登录成功');
+        } else {
+          addTestResult('管理员用户登录', false, `注册成功但登录失败: ${adminLogin.message}`);
+        }
+      } else {
+        addTestResult('管理员用户登录', false, `注册失败: ${adminRegister.message}`);
+      }
     } else {
-      addTestResult('管理员用户登录', false, '无法创建或登录管理员用户');
+      addTestResult('管理员用户登录', false, `无法创建或登录管理员用户: ${adminLogin.message}`);
     }
 
     console.log('\n' + '='.repeat(60));
@@ -227,27 +268,19 @@ async function runTests() {
 
     console.log('\n测试 2.1: 新用户注册（非管理员邮箱）');
     pendingUserEmail = generateRandomEmail();
-    console.log(`   注册用户: ${pendingUserEmail}`);
-    const newUserLogin = await loginUser(pendingUserEmail, pendingUserPassword);
+    const newUserRegister = await registerUser(pendingUserEmail, pendingUserPassword, 'Test User');
     
-    if (newUserLogin.status === 403 && newUserLogin.message === '账号待审核，请联系管理员') {
+    if (newUserRegister.success) {
       addTestResult(
         '新用户注册后处于待审核状态',
-        true,
-        `返回 403，消息: ${newUserLogin.message}`
+        newUserRegister.user?.status === 'PENDING',
+        `注册成功，状态: ${newUserRegister.user?.status}`
       );
-    } else if (newUserLogin.cookie) {
-      addTestResult(
-        '新用户注册后处于待审核状态',
-        false,
-        `错误: 新用户直接登录成功，预期应为待审核状态`
-      );
-      pendingUser = newUserLogin;
     } else {
       addTestResult(
         '新用户注册后处于待审核状态',
         false,
-        `状态: ${newUserLogin.status}, 消息: ${newUserLogin.message}`
+        `注册失败: ${newUserRegister.message}`
       );
     }
 
@@ -480,58 +513,57 @@ async function runTests() {
     if (adminUser && adminUser.cookie) {
       console.log('\n测试 7.1: 创建用于软删除测试的用户');
       const softDeleteUserEmail = generateRandomEmail();
-      console.log(`   创建用户: ${softDeleteUserEmail}`);
       
-      const userListBefore = await makeRequest(`/api/admin/users?page=1&limit=100`, {
-        method: 'GET',
-        headers: { 'Cookie': adminUser.cookie }
-      });
-      const countBefore = userListBefore.data.users?.length || 0;
-
-      const softDeleteUserLogin = await loginUser(softDeleteUserEmail, 'test123456');
+      const softDeleteUserRegister = await registerUser(softDeleteUserEmail, 'test123456', 'Soft Delete Test User');
       
-      const userListAfterRegister = await makeRequest(`/api/admin/users?page=1&limit=100`, {
-        method: 'GET',
-        headers: { 'Cookie': adminUser.cookie }
-      });
-      
-      const newUser = userListAfterRegister.data.users?.find(u => u.email === softDeleteUserEmail);
-      
-      if (newUser) {
-        softDeleteUserId = newUser.id;
-        addTestResult(
-          '创建软删除测试用户',
-          true,
-          `用户 ID: ${newUser.id}`
-        );
-
-        console.log('\n测试 7.2: 管理员软删除用户');
-        const deleteResponse = await makeRequest(`/api/admin/users/${newUser.id}`, {
-          method: 'DELETE',
-          headers: { 'Cookie': adminUser.cookie }
-        });
-
-        addTestResult(
-          '管理员软删除用户',
-          deleteResponse.status === 200,
-          `状态: ${deleteResponse.status}, 消息: ${deleteResponse.data.message}`
-        );
-
-        console.log('\n测试 7.3: 软删除后用户从列表中消失');
-        const userListAfterDelete = await makeRequest(`/api/admin/users?page=1&limit=100`, {
+      if (softDeleteUserRegister.success) {
+        const userListAfterRegister = await makeRequest(`/api/admin/users?page=1&limit=100`, {
           method: 'GET',
           headers: { 'Cookie': adminUser.cookie }
         });
-
-        const deletedUserInList = userListAfterDelete.data.users?.find(u => u.id === newUser.id);
         
-        addTestResult(
-          '软删除后用户从列表中消失',
-          !deletedUserInList,
-          deletedUserInList ? '错误: 用户仍在列表中' : '用户已从列表中移除'
-        );
+        const newUser = userListAfterRegister.data.users?.find(u => u.email === softDeleteUserEmail);
+        
+        if (newUser) {
+          softDeleteUserId = newUser.id;
+          addTestResult(
+            '创建软删除测试用户',
+            true,
+            `用户 ID: ${newUser.id}, 状态: ${newUser.status}`
+          );
+
+          console.log('\n测试 7.2: 管理员软删除用户');
+          const deleteResponse = await makeRequest(`/api/admin/users/${newUser.id}`, {
+            method: 'DELETE',
+            headers: { 'Cookie': adminUser.cookie }
+          });
+
+          addTestResult(
+            '管理员软删除用户',
+            deleteResponse.status === 200,
+            `状态: ${deleteResponse.status}, 消息: ${deleteResponse.data.message}`
+          );
+
+          console.log('\n测试 7.3: 软删除后用户从列表中消失');
+          const userListAfterDelete = await makeRequest(`/api/admin/users?page=1&limit=100`, {
+            method: 'GET',
+            headers: { 'Cookie': adminUser.cookie }
+          });
+
+          const deletedUserInList = userListAfterDelete.data.users?.find(u => u.id === newUser.id);
+          
+          addTestResult(
+            '软删除后用户从列表中消失',
+            !deletedUserInList,
+            deletedUserInList ? '错误: 用户仍在列表中' : '用户已从列表中移除'
+          );
+        } else {
+          addTestResult('创建软删除测试用户', false, '注册成功但在列表中未找到用户');
+          addTestResult('管理员软删除用户', false, '跳过 - 用户未创建');
+          addTestResult('软删除后用户从列表中消失', false, '跳过 - 用户未创建');
+        }
       } else {
-        addTestResult('创建软删除测试用户', false, '无法创建测试用户');
+        addTestResult('创建软删除测试用户', false, `注册失败: ${softDeleteUserRegister.message}`);
         addTestResult('管理员软删除用户', false, '跳过 - 用户未创建');
         addTestResult('软删除后用户从列表中消失', false, '跳过 - 用户未创建');
       }
@@ -583,40 +615,42 @@ async function runTests() {
     console.log('测试阶段 8: Middleware 拦截测试');
     console.log('='.repeat(60));
 
-    if (adminUser && adminUser.cookie && softDeleteUserId) {
-      console.log('\n测试 8.1: 软删除用户尝试访问受保护 API');
+    if (adminUser && adminUser.cookie) {
+      console.log('\n测试 8.1: 待审核用户无法登录');
       
-      const softDeleteUserLogin = await loginUser(
-        softDeleteUserId ? `test-user-${softDeleteUserId}@test.com` : generateRandomEmail(),
-        'test123456'
-      );
-
       const testMiddlewareEmail = generateRandomEmail();
-      const testMiddlewareLogin = await loginUser(testMiddlewareEmail, 'test123456');
+      const testMiddlewareRegister = await registerUser(testMiddlewareEmail, 'test123456', 'Middleware Test User');
       
-      addTestResult(
-        '待审核用户无法访问受保护 API',
-        testMiddlewareLogin.status === 403,
-        `状态: ${testMiddlewareLogin.status}, 消息: ${testMiddlewareLogin.message}`
-      );
-
-      if (testMiddlewareLogin.status === 403) {
-        console.log('\n测试 8.2: 直接通过 Postman 风格访问 admin API 被拦截');
-        const fakeCookie = `kb_user_id=${softDeleteUserId || 'fake-id'}`;
+      if (testMiddlewareRegister.success) {
+        const testMiddlewareLogin = await loginUser(testMiddlewareEmail, 'test123456');
         
-        const adminApiResponse = await makeRequest('/api/admin/users', {
-          method: 'GET',
-          headers: {
-            'Cookie': fakeCookie
-          }
-        });
-
         addTestResult(
-          '无效 Cookie 访问被拦截',
-          adminApiResponse.status === 401 || adminApiResponse.status === 403,
-          `状态: ${adminApiResponse.status}`
+          '待审核用户无法访问受保护 API',
+          testMiddlewareLogin.status === 403,
+          `状态: ${testMiddlewareLogin.status}, 消息: ${testMiddlewareLogin.message}`
         );
+
+        if (testMiddlewareLogin.status === 403) {
+          console.log('\n测试 8.2: 直接通过 Postman 风格访问 admin API 被拦截');
+          const fakeCookie = `kb_user_id=fake-invalid-user-id`;
+          
+          const adminApiResponse = await makeRequest('/api/admin/users', {
+            method: 'GET',
+            headers: {
+              'Cookie': fakeCookie
+            }
+          });
+
+          addTestResult(
+            '无效 Cookie 访问被拦截',
+            adminApiResponse.status === 401 || adminApiResponse.status === 403,
+            `状态: ${adminApiResponse.status}`
+          );
+        } else {
+          addTestResult('直接通过 Postman 风格访问 admin API 被拦截', false, '跳过 - 前置测试失败');
+        }
       } else {
+        addTestResult('待审核用户无法访问受保护 API', false, `注册失败: ${testMiddlewareRegister.message}`);
         addTestResult('直接通过 Postman 风格访问 admin API 被拦截', false, '跳过 - 前置测试失败');
       }
     } else {

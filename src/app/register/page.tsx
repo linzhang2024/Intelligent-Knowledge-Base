@@ -32,7 +32,7 @@ export default function RegisterPage() {
     }
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -43,13 +43,16 @@ export default function RegisterPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess(true);
-        setTimeout(() => {
-          router.push("/login");
-        }, 2000);
-      } else if (response.status === 403 && data.message === "账号待审核，请联系管理员") {
-        setSuccess(true);
-        setError("注册成功！您的账号正在等待管理员审核，审核通过后即可登录。");
+        if (data.isFirstUser) {
+          setSuccess(true);
+          setError("初始管理员账号创建成功！请使用该邮箱和密码登录系统。");
+          setTimeout(() => {
+            router.push("/login");
+          }, 3000);
+        } else {
+          setSuccess(true);
+          setError("注册申请已提交，请等待管理员审核。审核通过后您将收到通知。");
+        }
       } else {
         setError(data.message || "注册失败");
       }

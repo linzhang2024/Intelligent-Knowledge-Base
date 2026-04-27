@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -116,6 +117,15 @@ export default function LoginPage() {
             >
               {isLoading ? "登录中..." : "登录"}
             </button>
+          </div>
+
+          <div className="text-center">
+            <Link
+              href="/register"
+              className="font-medium text-indigo-600 hover:text-indigo-500 text-sm"
+            >
+              没有账户？立即注册
+            </Link>
           </div>
         </form>
       </div>

@@ -19,10 +19,14 @@ const PROTECTED_PATHS = [
 
 const PUBLIC_PATHS = [
   "/login",
+  "/register",
   "/api/auth/login",
+  "/api/auth/register",
   "/api/auth/logout",
   "/",
   "/api/uploads",
+  "/_next",
+  "/favicon.ico",
 ];
 
 export async function middleware(request: NextRequest) {
@@ -43,7 +47,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (userId && pathname === "/login") {
+  if (userId && (pathname === "/login" || pathname === "/register")) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -55,9 +59,11 @@ export const config = {
     "/dashboard/:path*",
     "/admin/:path*",
     "/login",
+    "/register",
     "/api/admin/:path*",
     "/api/documents/:path*",
     "/api/kb/:path*",
     "/api/auth/login",
+    "/api/auth/register",
   ],
 };

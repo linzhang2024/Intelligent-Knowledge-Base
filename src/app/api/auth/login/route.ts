@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     }
 
     let user = await prisma.user.findUnique({
-      where: { email },
+      where: { email, deletedAt: null },
     });
 
     const isAdminEmail = email.toLowerCase().includes("admin");

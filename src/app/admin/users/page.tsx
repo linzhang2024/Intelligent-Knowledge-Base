@@ -42,14 +42,14 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  PENDING: "待审核",
   ACTIVE: "活跃",
-  INACTIVE: "禁用",
-  BANNED: "封禁",
+  BANNED: "禁用",
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  PENDING: "bg-yellow-100 text-yellow-800",
   ACTIVE: "bg-green-100 text-green-800",
-  INACTIVE: "bg-gray-100 text-gray-800",
   BANNED: "bg-red-100 text-red-800",
 };
 
@@ -613,7 +613,7 @@ export default function UsersPage() {
                                   <div className="px-4 py-2 text-xs text-gray-400">
                                     更改状态
                                   </div>
-                                  {["ACTIVE", "INACTIVE", "BANNED"].map((status) => (
+                                  {["PENDING", "ACTIVE", "BANNED"].map((status) => (
                                     <button
                                       key={status}
                                       onClick={() => handleStatusChange(user.id, status)}

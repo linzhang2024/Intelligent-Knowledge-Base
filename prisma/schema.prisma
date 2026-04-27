@@ -13,7 +13,7 @@ model User {
   password      String
   name          String?
   role          String    @default("VIEWER")
-  status        String    @default("ACTIVE")
+  status        String    @default("PENDING")
   avatar        String?
   profile       String?
   createdAt     DateTime  @default(now())

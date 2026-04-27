@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/auth";
 
-export const USER_STATUS = {
-  PENDING: "PENDING",
-  ACTIVE: "ACTIVE",
-  BANNED: "BANNED",
+export const DOCUMENT_STATUS = {
+  DRAFT: "DRAFT",
+  PUBLISHED: "PUBLISHED",
+  ARCHIVED: "ARCHIVED",
 } as const;
 
-export type UserStatus = typeof USER_STATUS[keyof typeof USER_STATUS];
+export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
 
-const VALID_ROLES = ["ADMIN", "EDITOR", "VIEWER"];
-const VALID_STATUSES = Object.values(USER_STATUS);
+const VALID_STATUSES = Object.values(DOCUMENT_STATUS);
 
 export async function PATCH(
   request: NextRequest,
@@ -39,33 +38,23 @@ export async function PATCH(
       );
     }
 
-    const userId = params.id;
+    const documentId = params.id;
 
-    const targetUser = await prisma.user.findUnique({
-      where: { id: userId },
+    const targetDocument = await prisma.document.findUnique({
+      where: { id: documentId },
     });
 
-    if (!targetUser) {
+    if (!targetDocument) {
       return NextResponse.json(
-        { message: "用户不存在" },
+        { message: "文档不存在" },
         { status: 404 }
       );
     }
 
     const body = await request.json();
-    const { role, status } = body;
+    const { status, title, content } = body;
 
-    const updateData: { role?: string; status?: string } = {};
-
-    if (role !== undefined) {
-      if (!VALID_ROLES.includes(role)) {
-        return NextResponse.json(
-          { message: `无效的角色值，有效值为: ${VALID_ROLES.join(", ")}` },
-          { status: 400 }
-        );
-      }
-      updateData.role = role;
-    }
+    const updateData: Record<string, unknown> = {};
 
     if (status !== undefined) {
       if (!VALID_STATUSES.includes(status)) {
@@ -77,6 +66,14 @@ export async function PATCH(
       updateData.status = status;
     }
 
+    if (title !== undefined) {
+      updateData.title = title;
+    }
+
+    if (content !== undefined) {
+      updateData.content = content;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
         { message: "未提供任何可更新的字段" },
@@ -84,32 +81,42 @@ export async function PATCH(
       );
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
+    const updatedDocument = await prisma.document.update({
+      where: { id: documentId },
       data: updateData,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        status: true,
-        avatar: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        knowledgeBase: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
+    const serializedDocument = {
+      ...updatedDocument,
+      fileSize: updatedDocument.fileSize?.toString() || null,
+    };
+
     return NextResponse.json(
       {
-        message: "用户信息更新成功",
-        user: updatedUser,
+        message: "文档更新成功",
+        document: serializedDocument,
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error("更新用户失败:", error);
+    console.error("更新文档失败:", error);
     return NextResponse.json(
-      { message: "更新用户失败，请稍后重试" },
+      { message: "更新文档失败，请稍后重试" },
       { status: 500 }
     );
   }
@@ -141,40 +148,33 @@ export async function DELETE(
       );
     }
 
-    const userId = params.id;
+    const documentId = params.id;
 
-    if (userId === currentUserId) {
-      return NextResponse.json(
-        { message: "不能删除自己的账户" },
-        { status: 400 }
-      );
-    }
-
-    const targetUser = await prisma.user.findUnique({
-      where: { id: userId },
+    const targetDocument = await prisma.document.findUnique({
+      where: { id: documentId },
     });
 
-    if (!targetUser) {
+    if (!targetDocument) {
       return NextResponse.json(
-        { message: "用户不存在" },
+        { message: "文档不存在" },
         { status: 404 }
       );
     }
 
-    await prisma.user.delete({
-      where: { id: userId },
+    await prisma.document.delete({
+      where: { id: documentId },
     });
 
     return NextResponse.json(
       {
-        message: "用户删除成功",
+        message: "文档删除成功",
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error("删除用户失败:", error);
+    console.error("删除文档失败:", error);
     return NextResponse.json(
-      { message: "删除用户失败，请稍后重试" },
+      { message: "删除文档失败，请稍后重试" },
       { status: 500 }
     );
   }

@@ -2,10 +2,27 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [exportResult, setExportResult] = useState<{ kbId: string; data: unknown } | null>(null);
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+      if (response.ok) {
+        router.push("/login");
+        router.refresh();
+      }
+    } catch (error) {
+      console.error("登出失败:", error);
+      router.push("/login");
+    }
+  };
 
   const mockKnowledgeBases = [
     { id: "1", name: "产品文档库", docCount: 24, description: "产品相关的文档和规范" },
@@ -59,12 +76,12 @@ export default function DashboardPage() {
             >
               管理后台
             </Link>
-            <Link
-              href="/login"
+            <button
+              onClick={handleLogout}
               className="text-sm text-gray-600 hover:text-gray-900"
             >
               退出
-            </Link>
+            </button>
           </div>
         </div>
       </header>

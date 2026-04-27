@@ -37,6 +37,13 @@ export async function middleware(request: NextRequest) {
 
   const userId = request.cookies.get(AUTH_COOKIE_NAME)?.value;
 
+  if (pathname === "/" || pathname === "") {
+    if (userId) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (!userId && isProtectedPath) {
     if (pathname.startsWith("/api")) {
       return NextResponse.json(
@@ -56,14 +63,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/dashboard/:path*",
-    "/admin/:path*",
-    "/login",
-    "/register",
-    "/api/admin/:path*",
-    "/api/documents/:path*",
-    "/api/kb/:path*",
-    "/api/auth/login",
-    "/api/auth/register",
+    "/((?!_next/static|_next/image|favicon.ico|api/uploads).*)",
   ],
 };

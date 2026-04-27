@@ -22,38 +22,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email, deletedAt: null },
     });
 
-    const isAdminEmail = email.toLowerCase().includes("admin");
-
     if (!user) {
-      const userCount = await prisma.user.count();
-      const isFirstUser = userCount === 0;
-
-      user = await prisma.user.create({
-        data: {
-          email,
-          password,
-          name: email.split("@")[0],
-          role: isFirstUser || isAdminEmail ? "ADMIN" : "VIEWER",
-          status: isFirstUser || isAdminEmail ? USER_STATUS.ACTIVE : USER_STATUS.PENDING,
-        },
-      });
-
-      await prisma.knowledgeBase.create({
-        data: {
-          name: "我的第一个知识库",
-          description: "自动创建的默认知识库",
-          ownerId: user.id,
-        },
-      });
-    } else if (isAdminEmail && user.role !== "ADMIN") {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { role: "ADMIN", status: USER_STATUS.ACTIVE },
-      });
+      return NextResponse.json(
+        { message: "用户不存在，请先注册" },
+        { status: 401 }
+      );
     }
 
     if (user.password !== password) {

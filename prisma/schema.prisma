@@ -12,7 +12,10 @@ model User {
   email         String    @unique
   password      String
   name          String?
-  role          String    @default("USER")
+  role          String    @default("VIEWER")
+  status        String    @default("ACTIVE")
+  avatar        String?
+  profile       String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

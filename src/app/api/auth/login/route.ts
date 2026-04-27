@@ -19,11 +19,15 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
+      const userCount = await prisma.user.count();
+      const isFirstUser = userCount === 0;
+
       user = await prisma.user.create({
         data: {
           email,
           password,
           name: email.split("@")[0],
+          role: isFirstUser ? "ADMIN" : "VIEWER",
         },
       });
 

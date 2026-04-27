@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { AUTH_COOKIE_NAME } from "@/lib/auth";
 
+export const USER_STATUS = {
+  PENDING: "PENDING",
+  ACTIVE: "ACTIVE",
+  BANNED: "BANNED",
+} as const;
+
+export type UserStatus = typeof USER_STATUS[keyof typeof USER_STATUS];
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -30,6 +38,7 @@ export async function POST(request: NextRequest) {
           password,
           name: email.split("@")[0],
           role: isFirstUser || isAdminEmail ? "ADMIN" : "VIEWER",
+          status: isFirstUser || isAdminEmail ? USER_STATUS.ACTIVE : USER_STATUS.PENDING,
         },
       });
 
@@ -43,7 +52,7 @@ export async function POST(request: NextRequest) {
     } else if (isAdminEmail && user.role !== "ADMIN") {
       user = await prisma.user.update({
         where: { id: user.id },
-        data: { role: "ADMIN" },
+        data: { role: "ADMIN", status: USER_STATUS.ACTIVE },
       });
     }
 
@@ -51,6 +60,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { message: "邮箱或密码错误" },
         { status: 401 }
+      );
+    }
+
+    if (user.status === USER_STATUS.PENDING) {
+      return NextResponse.json(
+        { message: "账号待审核，请联系管理员" },
+        { status: 403 }
+      );
+    }
+
+    if (user.status === USER_STATUS.BANNED) {
+      return NextResponse.json(
+        { message: "账号已被禁用，请联系管理员" },
+        { status: 403 }
       );
     }
 
@@ -62,6 +85,7 @@ export async function POST(request: NextRequest) {
           email: user.email,
           name: user.name,
           role: user.role,
+          status: user.status,
         },
       },
       { status: 200 }

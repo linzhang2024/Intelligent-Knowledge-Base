@@ -20,12 +20,25 @@ export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS
 
 async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
-    const pdfParse = require("pdf-parse");
+    console.log("开始解析 PDF 文件:", filePath);
+    
+    const pdfParseModule = await import("pdf-parse");
+    const pdfParse = pdfParseModule.default || pdfParseModule;
+    
     const dataBuffer = await readFile(filePath);
+    console.log("读取 PDF 文件成功，大小:", dataBuffer.length, "bytes");
+    
     const pdfData = await pdfParse(dataBuffer);
+    console.log("PDF 解析完成，文本长度:", pdfData.text?.length || 0);
+    
     return pdfData.text || "";
   } catch (error) {
     console.error("PDF 文本提取失败:", error);
+    console.error("错误类型:", typeof error);
+    if (error instanceof Error) {
+      console.error("错误消息:", error.message);
+      console.error("错误堆栈:", error.stack);
+    }
     return "";
   }
 }
@@ -79,7 +92,7 @@ export async function POST(request: NextRequest) {
     }
 
     const isMimeTypeAllowed = ALLOWED_TYPES.includes(file.type);
-    const fileExtension = "." + file.name.split(".").pop()?.toLowerCase();
+    const fileExtension = "." + (file.name.split(".").pop()?.toLowerCase() || "");
     const isExtensionAllowed = ALLOWED_EXTENSIONS.includes(fileExtension);
 
     if (!isMimeTypeAllowed && !isExtensionAllowed) {

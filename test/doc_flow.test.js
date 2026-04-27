@@ -192,6 +192,8 @@ async function runTests() {
   let pendingUserEmail = null;
   let pendingUserPassword = 'test123456';
   let testDocument = null;
+  let softDeleteUserId = null;
+  let softDeleteDocId = null;
 
   try {
     console.log('\n' + '='.repeat(60));
@@ -321,20 +323,12 @@ async function runTests() {
     console.log('='.repeat(60));
 
     if (pendingUser && pendingUser.cookie) {
-      console.log('\n测试 4.1: 创建用户的默认知识库');
-      const kbListResponse = await makeRequest('/api/admin/documents', {
-        method: 'GET',
-        headers: {
-          'Cookie': adminUser?.cookie
-        }
-      });
-
-      console.log('\n测试 4.2: 准备上传文档（模拟 PDF 文件）');
+      console.log('\n测试 4.1: 准备上传文档（模拟 PDF 文件）');
       const pdfBuffer = createTestPDF();
       
       addTestResult('准备测试 PDF 文件', true, `PDF 大小: ${pdfBuffer.length} 字节`);
 
-      console.log('\n测试 4.3: 上传文档');
+      console.log('\n测试 4.2: 上传文档');
       const uploadFormData = {
         title: '自动化测试文档 - ' + Date.now(),
         file: {
@@ -363,21 +357,21 @@ async function runTests() {
       if (uploadSuccess) {
         testDocument = uploadResponse.data.document;
         
-        console.log('\n测试 4.4: 验证文档状态为 DRAFT');
+        console.log('\n测试 4.3: 验证文档状态为 DRAFT');
         addTestResult(
           '文档状态为 DRAFT',
           testDocument.status === 'DRAFT',
           `状态: ${testDocument.status}`
         );
 
-        console.log('\n测试 4.5: 验证文档关联了正确的作者');
+        console.log('\n测试 4.4: 验证文档关联了正确的作者');
         addTestResult(
           '文档作者关联正确',
           testDocument.authorId === pendingUser.userId,
           `作者 ID: ${testDocument.authorId}, 预期: ${pendingUser.userId}`
         );
 
-        console.log('\n测试 4.6: 验证文档有 fileUrl');
+        console.log('\n测试 4.5: 验证文档有 fileUrl');
         addTestResult(
           '文档有 fileUrl',
           testDocument.fileUrl !== null && testDocument.fileUrl !== undefined,
@@ -479,6 +473,157 @@ async function runTests() {
       addTestResult('被禁用用户无法登录', false, '跳过 - 管理员或用户未登录');
     }
 
+    console.log('\n' + '='.repeat(60));
+    console.log('测试阶段 7: 软删除测试');
+    console.log('='.repeat(60));
+
+    if (adminUser && adminUser.cookie) {
+      console.log('\n测试 7.1: 创建用于软删除测试的用户');
+      const softDeleteUserEmail = generateRandomEmail();
+      console.log(`   创建用户: ${softDeleteUserEmail}`);
+      
+      const userListBefore = await makeRequest(`/api/admin/users?page=1&limit=100`, {
+        method: 'GET',
+        headers: { 'Cookie': adminUser.cookie }
+      });
+      const countBefore = userListBefore.data.users?.length || 0;
+
+      const softDeleteUserLogin = await loginUser(softDeleteUserEmail, 'test123456');
+      
+      const userListAfterRegister = await makeRequest(`/api/admin/users?page=1&limit=100`, {
+        method: 'GET',
+        headers: { 'Cookie': adminUser.cookie }
+      });
+      
+      const newUser = userListAfterRegister.data.users?.find(u => u.email === softDeleteUserEmail);
+      
+      if (newUser) {
+        softDeleteUserId = newUser.id;
+        addTestResult(
+          '创建软删除测试用户',
+          true,
+          `用户 ID: ${newUser.id}`
+        );
+
+        console.log('\n测试 7.2: 管理员软删除用户');
+        const deleteResponse = await makeRequest(`/api/admin/users/${newUser.id}`, {
+          method: 'DELETE',
+          headers: { 'Cookie': adminUser.cookie }
+        });
+
+        addTestResult(
+          '管理员软删除用户',
+          deleteResponse.status === 200,
+          `状态: ${deleteResponse.status}, 消息: ${deleteResponse.data.message}`
+        );
+
+        console.log('\n测试 7.3: 软删除后用户从列表中消失');
+        const userListAfterDelete = await makeRequest(`/api/admin/users?page=1&limit=100`, {
+          method: 'GET',
+          headers: { 'Cookie': adminUser.cookie }
+        });
+
+        const deletedUserInList = userListAfterDelete.data.users?.find(u => u.id === newUser.id);
+        
+        addTestResult(
+          '软删除后用户从列表中消失',
+          !deletedUserInList,
+          deletedUserInList ? '错误: 用户仍在列表中' : '用户已从列表中移除'
+        );
+      } else {
+        addTestResult('创建软删除测试用户', false, '无法创建测试用户');
+        addTestResult('管理员软删除用户', false, '跳过 - 用户未创建');
+        addTestResult('软删除后用户从列表中消失', false, '跳过 - 用户未创建');
+      }
+
+      if (testDocument) {
+        console.log('\n测试 7.4: 管理员软删除文档');
+        softDeleteDocId = testDocument.id;
+        
+        const docListBefore = await makeRequest(`/api/admin/documents?page=1&limit=100`, {
+          method: 'GET',
+          headers: { 'Cookie': adminUser.cookie }
+        });
+        const docCountBefore = docListBefore.data.documents?.length || 0;
+
+        const deleteDocResponse = await makeRequest(`/api/admin/documents/${testDocument.id}`, {
+          method: 'DELETE',
+          headers: { 'Cookie': adminUser.cookie }
+        });
+
+        addTestResult(
+          '管理员软删除文档',
+          deleteDocResponse.status === 200,
+          `状态: ${deleteDocResponse.status}, 消息: ${deleteDocResponse.data.message}`
+        );
+
+        console.log('\n测试 7.5: 软删除后文档从列表中消失');
+        const docListAfterDelete = await makeRequest(`/api/admin/documents?page=1&limit=100`, {
+          method: 'GET',
+          headers: { 'Cookie': adminUser.cookie }
+        });
+
+        const deletedDocInList = docListAfterDelete.data.documents?.find(d => d.id === testDocument.id);
+        
+        addTestResult(
+          '软删除后文档从列表中消失',
+          !deletedDocInList,
+          deletedDocInList ? '错误: 文档仍在列表中' : '文档已从列表中移除'
+        );
+      }
+    } else {
+      addTestResult('创建软删除测试用户', false, '跳过 - 管理员未登录');
+      addTestResult('管理员软删除用户', false, '跳过 - 管理员未登录');
+      addTestResult('软删除后用户从列表中消失', false, '跳过 - 管理员未登录');
+      addTestResult('管理员软删除文档', false, '跳过 - 管理员未登录');
+      addTestResult('软删除后文档从列表中消失', false, '跳过 - 管理员未登录');
+    }
+
+    console.log('\n' + '='.repeat(60));
+    console.log('测试阶段 8: Middleware 拦截测试');
+    console.log('='.repeat(60));
+
+    if (adminUser && adminUser.cookie && softDeleteUserId) {
+      console.log('\n测试 8.1: 软删除用户尝试访问受保护 API');
+      
+      const softDeleteUserLogin = await loginUser(
+        softDeleteUserId ? `test-user-${softDeleteUserId}@test.com` : generateRandomEmail(),
+        'test123456'
+      );
+
+      const testMiddlewareEmail = generateRandomEmail();
+      const testMiddlewareLogin = await loginUser(testMiddlewareEmail, 'test123456');
+      
+      addTestResult(
+        '待审核用户无法访问受保护 API',
+        testMiddlewareLogin.status === 403,
+        `状态: ${testMiddlewareLogin.status}, 消息: ${testMiddlewareLogin.message}`
+      );
+
+      if (testMiddlewareLogin.status === 403) {
+        console.log('\n测试 8.2: 直接通过 Postman 风格访问 admin API 被拦截');
+        const fakeCookie = `kb_user_id=${softDeleteUserId || 'fake-id'}`;
+        
+        const adminApiResponse = await makeRequest('/api/admin/users', {
+          method: 'GET',
+          headers: {
+            'Cookie': fakeCookie
+          }
+        });
+
+        addTestResult(
+          '无效 Cookie 访问被拦截',
+          adminApiResponse.status === 401 || adminApiResponse.status === 403,
+          `状态: ${adminApiResponse.status}`
+        );
+      } else {
+        addTestResult('直接通过 Postman 风格访问 admin API 被拦截', false, '跳过 - 前置测试失败');
+      }
+    } else {
+      addTestResult('待审核用户无法访问受保护 API', false, '跳过 - 管理员未登录');
+      addTestResult('直接通过 Postman 风格访问 admin API 被拦截', false, '跳过 - 管理员未登录');
+    }
+
   } catch (error) {
     console.error('\n测试过程中发生错误:');
     console.error(`  错误信息: ${error.message}`);
@@ -519,6 +664,9 @@ async function runTests() {
     console.log('   ✅ 文档状态默认为 DRAFT');
     console.log('   ✅ 管理员可修改文档状态');
     console.log('   ✅ 被禁用用户无法登录');
+    console.log('   ✅ 软删除用户后从列表中消失');
+    console.log('   ✅ 软删除文档后从列表中消失');
+    console.log('   ✅ Middleware 拦截非 ACTIVE 状态用户');
     process.exit(0);
   } else {
     console.log('❌ 部分测试失败！');

@@ -91,12 +91,18 @@ function PreviewModal({
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">提取的文本内容:</p>
             <div className="max-h-96 overflow-y-auto bg-gray-50 rounded-md p-4">
-              {document.content ? (
+              {document.content && document.content.trim() ? (
                 <pre className="text-sm text-gray-900 whitespace-pre-wrap font-sans">
                   {document.content}
                 </pre>
               ) : (
-                <p className="text-sm text-gray-500">暂无提取的文本内容</p>
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-3">⏳</div>
+                  <p className="text-sm text-gray-600 font-medium">内容解析中或解析失败</p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    可能原因：PDF 加密、扫描版 PDF、文本提取错误
+                  </p>
+                </div>
               )}
             </div>
           </div>

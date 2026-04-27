@@ -18,6 +18,7 @@ model User {
   profile       String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
 
   documents     Document[]
   knowledgeBases KnowledgeBase[]
@@ -51,6 +52,7 @@ model Document {
   knowledgeBaseId String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
 
   author          User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)

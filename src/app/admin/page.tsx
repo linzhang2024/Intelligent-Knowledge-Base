@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { formatFileSize } from "@/lib/format";
 
 type TabType = "overview" | "users" | "documents" | "knowledge-bases" | "settings";
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const router = useRouter();
 
   const mockStats = {
     totalUsers: 156,
@@ -97,7 +99,13 @@ export default function AdminPage() {
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    if (tab.id === "users") {
+                      router.push("/admin/users");
+                    } else {
+                      setActiveTab(tab.id);
+                    }
+                  }}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id ? "border-indigo-500 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}
                 >
                   {tab.label}

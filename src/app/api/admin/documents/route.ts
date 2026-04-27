@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     }
 
     const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId },
+      where: { id: currentUserId, deletedAt: null },
       select: { role: true },
     });
 
@@ -44,7 +44,9 @@ export async function GET(request: NextRequest) {
 
     const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      deletedAt: null,
+    };
 
     if (status && VALID_STATUSES.includes(status as DocumentStatus)) {
       where.status = status;

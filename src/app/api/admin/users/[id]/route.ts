@@ -28,7 +28,7 @@ export async function PATCH(
     }
 
     const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId },
+      where: { id: currentUserId, deletedAt: null },
       select: { role: true },
     });
 
@@ -42,7 +42,7 @@ export async function PATCH(
     const userId = params.id;
 
     const targetUser = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: userId, deletedAt: null },
     });
 
     if (!targetUser) {
@@ -130,7 +130,7 @@ export async function DELETE(
     }
 
     const currentUser = await prisma.user.findUnique({
-      where: { id: currentUserId },
+      where: { id: currentUserId, deletedAt: null },
       select: { role: true },
     });
 
@@ -151,7 +151,7 @@ export async function DELETE(
     }
 
     const targetUser = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: userId, deletedAt: null },
     });
 
     if (!targetUser) {
@@ -161,8 +161,9 @@ export async function DELETE(
       );
     }
 
-    await prisma.user.delete({
+    await prisma.user.update({
       where: { id: userId },
+      data: { deletedAt: new Date() },
     });
 
     return NextResponse.json(

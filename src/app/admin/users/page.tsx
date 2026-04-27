@@ -157,6 +157,126 @@ function DeleteModal({
   );
 }
 
+function BatchConfirmModal({
+  isOpen,
+  action,
+  count,
+  onConfirm,
+  onCancel,
+  isLoading,
+}: {
+  isOpen: boolean;
+  action: "approve" | "ban" | "delete";
+  count: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isLoading: boolean;
+}) {
+  if (!isOpen) return null;
+
+  const actionLabels: Record<string, { title: string; message: string; button: string }> = {
+    approve: {
+      title: "确认批量审核通过",
+      message: `您确定要审核通过选中的 ${count} 个用户吗？`,
+      button: "确认通过",
+    },
+    ban: {
+      title: "确认批量禁用",
+      message: `您确定要禁用选中的 ${count} 个用户吗？`,
+      button: "确认禁用",
+    },
+    delete: {
+      title: "确认批量删除",
+      message: `您确定要删除选中的 ${count} 个用户吗？此操作不可恢复。`,
+      button: "确认删除",
+    },
+  };
+
+  const config = actionLabels[action];
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-center justify-center p-4 text-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={onCancel}></div>
+        <div className="relative w-full max-w-md transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
+          <div className="flex flex-col items-center text-center">
+            <div className={`flex h-12 w-12 items-center justify-center rounded-full ${action === "delete" ? "bg-red-100" : "bg-yellow-100"}`}>
+              <svg
+                className={`h-6 w-6 ${action === "delete" ? "text-red-600" : "text-yellow-600"}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+            </div>
+            <div className="mt-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                {config.title}
+              </h3>
+              <div className="mt-2">
+                <p className="text-sm text-gray-500">
+                  {config.message}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex space-x-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isLoading}
+              className="flex-1 inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={isLoading}
+              className={`flex-1 inline-flex justify-center rounded-md border border-transparent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed ${action === "delete" ? "bg-red-600 hover:bg-red-700" : action === "ban" ? "bg-orange-600 hover:bg-orange-700" : "bg-green-600 hover:bg-green-700"}`}
+            >
+              {isLoading ? (
+                <>
+                  <svg
+                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  处理中...
+                </>
+              ) : (
+                config.button
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -172,16 +292,27 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<DeleteModalState>({
     isOpen: false,
     userId: "",
     userName: null,
     userEmail: "",
   });
+  const [batchModal, setBatchModal] = useState<{
+    isOpen: boolean;
+    action: "approve" | "ban" | "delete";
+  }>({
+    isOpen: false,
+    action: "approve",
+  });
+
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
 
   const fetchUsers = useCallback(async (page: number, searchQuery: string) => {
     setLoading(true);
     setError(null);
+    setSelectedUsers(new Set());
     try {
       const params = new URLSearchParams({
         page: page.toString(),
@@ -349,6 +480,104 @@ export default function UsersPage() {
     });
   };
 
+  const toggleUserSelection = (userId: string) => {
+    const newSelected = new Set(selectedUsers);
+    if (newSelected.has(userId)) {
+      newSelected.delete(userId);
+    } else {
+      newSelected.add(userId);
+    }
+    setSelectedUsers(newSelected);
+  };
+
+  const toggleAllSelection = () => {
+    if (selectedUsers.size === users.length) {
+      setSelectedUsers(new Set());
+    } else {
+      setSelectedUsers(new Set(users.map((u) => u.id)));
+    }
+  };
+
+  const pendingUsers = users.filter((u) => u.status === "PENDING");
+  const selectedPendingIds = Array.from(selectedUsers).filter(
+    (id) => users.find((u) => u.id === id)?.status === "PENDING"
+  );
+
+  const openBatchModal = (action: "approve" | "ban" | "delete") => {
+    if (action === "approve" && selectedPendingIds.length === 0) {
+      alert("请选择至少一个待审核的用户");
+      return;
+    }
+    if (action !== "approve" && selectedUsers.size === 0) {
+      alert("请选择至少一个用户");
+      return;
+    }
+    setBatchModal({ isOpen: true, action });
+  };
+
+  const handleBatchConfirm = async () => {
+    const targetIds = batchModal.action === "approve" 
+      ? selectedPendingIds 
+      : Array.from(selectedUsers);
+    
+    if (targetIds.length === 0) return;
+
+    setBatchLoading(true);
+    setActiveDropdown(null);
+
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: batchModal.action,
+          userIds: targetIds,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "批量操作失败");
+      }
+
+      const result = await response.json();
+      
+      if (batchModal.action === "delete") {
+        setUsers((prev) => prev.filter((u) => !targetIds.includes(u.id)));
+        setPagination((prev) => ({
+          ...prev,
+          total: prev.total - result.count,
+          totalPages: Math.ceil((prev.total - result.count) / prev.limit),
+        }));
+      } else {
+        setUsers((prev) =>
+          prev.map((u) => {
+            if (targetIds.includes(u.id)) {
+              return {
+                ...u,
+                status: batchModal.action === "approve" ? "ACTIVE" : "BANNED",
+                updatedAt: new Date().toISOString(),
+              };
+            }
+            return u;
+          })
+        );
+      }
+
+      setSelectedUsers(new Set());
+      alert(result.message);
+      setBatchModal({ isOpen: false, action: "approve" });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "批量操作失败");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const handleBatchCancel = () => {
+    setBatchModal({ isOpen: false, action: "approve" });
+  };
+
   const toggleDropdown = (userId: string) => {
     setActiveDropdown(activeDropdown === userId ? null : userId);
   };
@@ -373,6 +602,15 @@ export default function UsersPage() {
         onConfirm={handleDeleteConfirm}
         onCancel={handleDeleteCancel}
         isLoading={actionLoading === deleteModal.userId}
+      />
+
+      <BatchConfirmModal
+        isOpen={batchModal.isOpen}
+        action={batchModal.action}
+        count={batchModal.action === "approve" ? selectedPendingIds.length : selectedUsers.size}
+        onConfirm={handleBatchConfirm}
+        onCancel={handleBatchCancel}
+        isLoading={batchLoading}
       />
 
       <header className="bg-white shadow">
@@ -403,9 +641,43 @@ export default function UsersPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white shadow sm:rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <h2 className="text-lg font-medium text-gray-900">用户列表</h2>
-              <div className="flex items-center space-x-3">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-medium text-gray-900">用户列表</h2>
+                {selectedUsers.size > 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    已选择 {selectedUsers.size} 项
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                {selectedPendingIds.length > 0 && (
+                  <button
+                    onClick={() => openBatchModal("approve")}
+                    disabled={batchLoading}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    批量审核通过 ({selectedPendingIds.length})
+                  </button>
+                )}
+                {selectedUsers.size > 0 && (
+                  <>
+                    <button
+                      onClick={() => openBatchModal("ban")}
+                      disabled={batchLoading}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      批量禁用 ({selectedUsers.size})
+                    </button>
+                    <button
+                      onClick={() => openBatchModal("delete")}
+                      disabled={batchLoading}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      批量删除 ({selectedUsers.size})
+                    </button>
+                  </>
+                )}
                 <div className="relative">
                   <input
                     type="text"
@@ -480,6 +752,14 @@ export default function UsersPage() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.size === users.length && users.length > 0}
+                          onChange={toggleAllSelection}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         用户
                       </th>
@@ -503,6 +783,14 @@ export default function UsersPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {users.map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.has(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">

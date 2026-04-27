@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface User {
   id: string;
@@ -19,6 +20,13 @@ interface Pagination {
   limit: number;
   total: number;
   totalPages: number;
+}
+
+interface DeleteModalState {
+  isOpen: boolean;
+  userId: string;
+  userName: string | null;
+  userEmail: string;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -45,7 +53,112 @@ const STATUS_COLORS: Record<string, string> = {
   BANNED: "bg-red-100 text-red-800",
 };
 
+function DeleteModal({
+  isOpen,
+  userId,
+  userName,
+  userEmail,
+  onConfirm,
+  onCancel,
+  isLoading,
+}: DeleteModalState & {
+  onConfirm: () => void;
+  onCancel: () => void;
+  isLoading: boolean;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-center justify-center p-4 text-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={onCancel}></div>
+        <div className="relative w-full max-w-md transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <svg
+                className="h-6 w-6 text-red-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+            </div>
+            <div className="mt-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                确认删除用户
+              </h3>
+              <div className="mt-2">
+                <p className="text-sm text-gray-500">
+                  您确定要删除以下用户吗？此操作不可恢复。
+                </p>
+                <div className="mt-3 rounded-md bg-gray-50 p-3">
+                  <p className="text-sm font-medium text-gray-900">
+                    {userName || "--"}
+                  </p>
+                  <p className="text-sm text-gray-500">{userEmail}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex space-x-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isLoading}
+              className="flex-1 inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={isLoading}
+              className="flex-1 inline-flex justify-center rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? (
+                <>
+                  <svg
+                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  删除中...
+                </>
+              ) : (
+                "确认删除"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UsersPage() {
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -59,6 +172,12 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<DeleteModalState>({
+    isOpen: false,
+    userId: "",
+    userName: null,
+    userEmail: "",
+  });
 
   const fetchUsers = useCallback(async (page: number, searchQuery: string) => {
     setLoading(true);
@@ -136,8 +255,11 @@ export default function UsersPage() {
         throw new Error(data.message || "更新角色失败");
       }
 
+      const result = await response.json();
       setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+        prev.map((u) =>
+          u.id === userId ? { ...u, role: newRole, updatedAt: result.user.updatedAt } : u
+        )
       );
     } catch (err) {
       alert(err instanceof Error ? err.message : "更新角色失败");
@@ -161,8 +283,11 @@ export default function UsersPage() {
         throw new Error(data.message || "更新状态失败");
       }
 
+      const result = await response.json();
       setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u))
+        prev.map((u) =>
+          u.id === userId ? { ...u, status: newStatus, updatedAt: result.user.updatedAt } : u
+        )
       );
     } catch (err) {
       alert(err instanceof Error ? err.message : "更新状态失败");
@@ -171,13 +296,20 @@ export default function UsersPage() {
     }
   };
 
-  const handleDelete = async (userId: string) => {
-    if (!confirm("确定要删除该用户吗？此操作不可恢复。")) {
-      return;
-    }
-
-    setActionLoading(userId);
+  const handleDeleteClick = (user: User) => {
     setActiveDropdown(null);
+    setDeleteModal({
+      isOpen: true,
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    const { userId } = deleteModal;
+    setActionLoading(userId);
+
     try {
       const response = await fetch(`/api/admin/users/${userId}`, {
         method: "DELETE",
@@ -194,11 +326,27 @@ export default function UsersPage() {
         total: prev.total - 1,
         totalPages: Math.ceil((prev.total - 1) / prev.limit),
       }));
+
+      setDeleteModal({
+        isOpen: false,
+        userId: "",
+        userName: null,
+        userEmail: "",
+      });
     } catch (err) {
       alert(err instanceof Error ? err.message : "删除用户失败");
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({
+      isOpen: false,
+      userId: "",
+      userName: null,
+      userEmail: "",
+    });
   };
 
   const toggleDropdown = (userId: string) => {
@@ -217,20 +365,30 @@ export default function UsersPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <DeleteModal
+        isOpen={deleteModal.isOpen}
+        userId={deleteModal.userId}
+        userName={deleteModal.userName}
+        userEmail={deleteModal.userEmail}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        isLoading={actionLoading === deleteModal.userId}
+      />
+
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <Link href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900 mr-4">
-              ← 返回
+            <Link href="/admin" className="text-sm text-gray-600 hover:text-gray-900 mr-4">
+              ← 返回管理后台
             </Link>
             <h1 className="text-xl font-bold text-gray-900">用户管理</h1>
           </div>
           <div className="flex items-center space-x-4">
             <Link
-              href="/admin"
+              href="/dashboard"
               className="text-sm text-gray-600 hover:text-gray-900"
             >
-              管理后台
+              前台
             </Link>
             <Link
               href="/login"
@@ -318,7 +476,7 @@ export default function UsersPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-visible">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -442,8 +600,8 @@ export default function UsersPage() {
                                     <button
                                       key={role}
                                       onClick={() => handleRoleChange(user.id, role)}
-                                      disabled={user.role === role}
-                                      className={`w-full text-left px-4 py-2 text-sm ${user.role === role ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
+                                      disabled={user.role === role || actionLoading === user.id}
+                                      className={`w-full text-left px-4 py-2 text-sm ${user.role === role || actionLoading === user.id ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
                                     >
                                       {ROLE_LABELS[role]}
                                       {user.role === role && " ✓"}
@@ -459,8 +617,8 @@ export default function UsersPage() {
                                     <button
                                       key={status}
                                       onClick={() => handleStatusChange(user.id, status)}
-                                      disabled={user.status === status}
-                                      className={`w-full text-left px-4 py-2 text-sm ${user.status === status ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
+                                      disabled={user.status === status || actionLoading === user.id}
+                                      className={`w-full text-left px-4 py-2 text-sm ${user.status === status || actionLoading === user.id ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
                                     >
                                       {STATUS_LABELS[status]}
                                       {user.status === status && " ✓"}
@@ -470,8 +628,9 @@ export default function UsersPage() {
                                   <div className="border-t border-gray-100 my-1"></div>
 
                                   <button
-                                    onClick={() => handleDelete(user.id)}
-                                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                    onClick={() => handleDeleteClick(user)}
+                                    disabled={actionLoading === user.id}
+                                    className={`w-full text-left px-4 py-2 text-sm ${actionLoading === user.id ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-red-600 hover:bg-red-50"}`}
                                   >
                                     删除用户
                                   </button>

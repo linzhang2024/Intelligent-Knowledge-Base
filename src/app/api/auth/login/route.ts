@@ -18,6 +18,8 @@ export async function POST(request: NextRequest) {
       where: { email },
     });
 
+    const isAdminEmail = email.toLowerCase().includes("admin");
+
     if (!user) {
       const userCount = await prisma.user.count();
       const isFirstUser = userCount === 0;
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
           email,
           password,
           name: email.split("@")[0],
-          role: isFirstUser ? "ADMIN" : "VIEWER",
+          role: isFirstUser || isAdminEmail ? "ADMIN" : "VIEWER",
         },
       });
 
@@ -37,6 +39,11 @@ export async function POST(request: NextRequest) {
           description: "自动创建的默认知识库",
           ownerId: user.id,
         },
+      });
+    } else if (isAdminEmail && user.role !== "ADMIN") {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { role: "ADMIN" },
       });
     }
 

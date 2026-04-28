@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface KnowledgeBase {
   id: string;
@@ -37,6 +37,7 @@ interface SSEEvent {
 
 export default function ChatPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -47,6 +48,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSources, setShowSources] = useState<string | null>(null);
+  const [initialKbLoaded, setInitialKbLoaded] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -62,7 +64,18 @@ export default function ChatPage() {
         const response = await fetch("/api/kb");
         if (response.ok) {
           const data = await response.json();
-          setKnowledgeBases(data.knowledgeBases || []);
+          const kbs = data.knowledgeBases || [];
+          setKnowledgeBases(kbs);
+
+          const kbFromUrl = searchParams.get("kb");
+          if (kbFromUrl && !initialKbLoaded) {
+            const validKb = kbs.find((kb: KnowledgeBase) => kb.id === kbFromUrl);
+            if (validKb) {
+              setSelectedKbId(kbFromUrl);
+              console.log(`[Chat] 自动选中知识库: ${validKb.name}`);
+            }
+            setInitialKbLoaded(true);
+          }
         }
       } catch (err) {
         console.error("获取知识库列表失败:", err);
@@ -70,7 +83,7 @@ export default function ChatPage() {
     };
 
     fetchKnowledgeBases();
-  }, []);
+  }, [searchParams, initialKbLoaded]);
 
   const generateMessageId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 

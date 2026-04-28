@@ -1,6 +1,6 @@
 const http = require('http');
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = 'http://localhost:3005';
 
 let testUser1Cookie = '';
 let testUser2Cookie = '';
@@ -196,15 +196,15 @@ async function runTest() {
     console.log('测试阶段 5: 端口配置验证');
     console.log('='.repeat(60));
 
-    console.log('\n测试 5.1: 默认端口已改为 3001');
+    console.log('\n测试 5.1: 默认端口已改为 3005');
     console.log('   文件: package.json');
     console.log('   ✅ "dev": "node scripts/check-port.js"');
-    console.log('   ✅ "dev:direct": "next dev --port 3001"');
-    console.log('   ✅ "start": "next start --port 3001"');
+    console.log('   ✅ "dev:direct": "next dev --port 3005"');
+    console.log('   ✅ "start": "next start --port 3005"');
 
     console.log('\n测试 5.2: 端口占用检查脚本');
     console.log('   文件: scripts/check-port.js');
-    console.log('   ✅ 启动前检查端口 3001 是否被占用');
+    console.log('   ✅ 启动前检查端口 3005 是否被占用');
     console.log('   ✅ 如果被占用，显示错误信息并退出');
     console.log('   ✅ 提供解决方案提示');
 
@@ -216,7 +216,7 @@ async function runTest() {
       console.log('\n✅ 所有安全测试通过！');
       console.log('\n📋 完整测试流程:');
       console.log('   1. 启动开发服务器: npm run dev');
-      console.log('   2. 访问 http://localhost:3001/login');
+      console.log('   2. 访问 http://localhost:3005/login');
       console.log('   3. 使用任意邮箱密码登录（会自动创建用户）');
       console.log('   4. 跳转到 dashboard，点击"导出为 PDF"按钮');
       console.log('   5. 验证只有所有者才能导出');
@@ -224,7 +224,7 @@ async function runTest() {
       console.log('   1. 未登录用户访问 API → 401 Unauthorized');
       console.log('   2. 非所有者访问他人知识库 → 403 Forbidden');
       console.log('   3. 使用 httpOnly cookie 存储用户身份');
-      console.log('   4. 默认端口改为 3001，避免端口冲突');
+      console.log('   4. 默认端口改为 3005，避免端口冲突');
       console.log('\n🎉 安全测试完成！');
       process.exit(0);
     } else {
@@ -241,7 +241,7 @@ async function runTest() {
     console.error(`  错误信息: ${error.message}`);
     console.error('\n请确保:');
     console.error('  1. 开发服务器正在运行 (npm run dev)');
-    console.error('  2. 服务器运行在端口 3001');
+    console.error('  2. 服务器运行在端口 3005');
     console.error('  3. 数据库已正确配置并运行\n');
     process.exit(1);
   }

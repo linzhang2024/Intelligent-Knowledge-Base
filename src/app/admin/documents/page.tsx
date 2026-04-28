@@ -43,6 +43,11 @@ interface PreviewModalState {
   document: Document | null;
 }
 
+interface DeleteConfirmModalState {
+  isOpen: boolean;
+  document: Document | null;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "草稿",
   PUBLISHED: "已发布",
@@ -120,6 +125,53 @@ function PreviewModal({
   );
 }
 
+function DeleteConfirmModal({
+  isOpen,
+  document,
+  onClose,
+  onConfirm,
+}: DeleteConfirmModalState & {
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!isOpen || !document) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-center justify-center p-4 text-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={onClose}></div>
+        <div className="relative w-full max-w-md transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
+          <div className="mb-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              确认删除
+            </h3>
+            <p className="text-sm text-gray-600">
+              确定要删除文档 <span className="font-medium text-gray-900">"{document.title}"</span> 吗？
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              此操作不可撤销，删除后数据将无法恢复。
+            </p>
+          </div>
+          <div className="mt-6 flex justify-end space-x-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              取消
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700"
+            >
+              确认删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DocumentsPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -136,6 +188,10 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [previewModal, setPreviewModal] = useState<PreviewModalState>({
+    isOpen: false,
+    document: null,
+  });
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<DeleteConfirmModalState>({
     isOpen: false,
     document: null,
   });
@@ -245,6 +301,55 @@ export default function DocumentsPage() {
     });
   };
 
+  const handleDeleteClick = (document: Document) => {
+    setDeleteConfirmModal({
+      isOpen: true,
+      document,
+    });
+  };
+
+  const handleDeleteModalClose = () => {
+    setDeleteConfirmModal({
+      isOpen: false,
+      document: null,
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmModal.document) return;
+
+    const documentId = deleteConfirmModal.document.id;
+    setActionLoading(documentId);
+
+    try {
+      const response = await fetch(`/api/admin/documents/${documentId}`, {
+        method: "DELETE",
+      });
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "删除失败");
+      }
+
+      setDocuments((prev) => prev.filter((d) => d.id !== documentId));
+      setPagination((prev) => ({
+        ...prev,
+        total: prev.total - 1,
+        totalPages: Math.ceil((prev.total - 1) / prev.limit),
+      }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setActionLoading(null);
+      handleDeleteModalClose();
+    }
+  };
+
   const handleLogout = async () => {
     try {
       const response = await fetch("/api/auth/logout", {
@@ -266,6 +371,12 @@ export default function DocumentsPage() {
         isOpen={previewModal.isOpen}
         document={previewModal.document}
         onClose={handlePreviewClose}
+      />
+      <DeleteConfirmModal
+        isOpen={deleteConfirmModal.isOpen}
+        document={deleteConfirmModal.document}
+        onClose={handleDeleteModalClose}
+        onConfirm={handleDeleteConfirm}
       />
 
       <header className="bg-white shadow">
@@ -464,6 +575,13 @@ export default function DocumentsPage() {
                               <option value="PUBLISHED">已发布</option>
                               <option value="ARCHIVED">已归档</option>
                             </select>
+                            <button
+                              onClick={() => handleDeleteClick(doc)}
+                              disabled={actionLoading === doc.id}
+                              className="inline-flex items-center px-3 py-1.5 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-white hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              删除
+                            </button>
                           </div>
                         </td>
                       </tr>

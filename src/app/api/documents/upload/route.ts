@@ -12,6 +12,41 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const CHUNK_SIZE = 500;
 const CHUNK_OVERLAP = 50;
 
+class DocumentParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DocumentParseError";
+  }
+}
+
+class EncryptedPDFError extends DocumentParseError {
+  constructor() {
+    super("PDF 文件已加密，无法解析，请提供未加密的文件");
+    this.name = "EncryptedPDFError";
+  }
+}
+
+class ScannedPDFError extends DocumentParseError {
+  constructor() {
+    super("PDF 文件为扫描版（仅图片），无法提取文本，请提供可编辑的 PDF 文档");
+    this.name = "ScannedPDFError";
+  }
+}
+
+class CorruptedFileError extends DocumentParseError {
+  constructor(fileType: string) {
+    super(`${fileType} 文件已损坏，无法解析，请检查文件完整性`);
+    this.name = "CorruptedFileError";
+  }
+}
+
+class UnsupportedFormatError extends DocumentParseError {
+  constructor(format: string) {
+    super(`不支持的文件格式 "${format}"，仅支持 PDF、DOCX、TXT 格式`);
+    this.name = "UnsupportedFormatError";
+  }
+}
+
 function splitTextIntoChunks(text: string, chunkSize: number = CHUNK_SIZE, overlap: number = CHUNK_OVERLAP): string[] {
   if (!text || text.length === 0) {
     return [];
@@ -65,23 +100,130 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
     const dataBuffer = await readFile(filePath);
     console.log("读取 PDF 文件成功，大小:", dataBuffer.length, "bytes");
     
-    const pdfData = await pdfParse(dataBuffer);
-    console.log("PDF 解析完成，文本长度:", pdfData.text?.length || 0);
+    if (dataBuffer.length === 0) {
+      throw new CorruptedFileError("PDF");
+    }
     
-    return pdfData.text || "";
+    try {
+      const pdfData = await pdfParse(dataBuffer);
+      console.log("PDF 解析完成，文本长度:", pdfData.text?.length || 0);
+      
+      const text = pdfData.text || "";
+      
+      if (text.trim().length === 0) {
+        const info = pdfData.info;
+        if (info && info.Encrypt) {
+          throw new EncryptedPDFError();
+        }
+        
+        if (pdfData.numpages && pdfData.numpages > 0 && text.length === 0) {
+          throw new ScannedPDFError();
+        }
+        
+        return "";
+      }
+      
+      return text;
+    } catch (pdfError) {
+      const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
+      
+      if (errorMessage.includes("encrypt") || errorMessage.includes("Encrypt") || errorMessage.includes("password")) {
+        throw new EncryptedPDFError();
+      }
+      
+      if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid")) {
+        throw new CorruptedFileError("PDF");
+      }
+      
+      throw pdfError;
+    }
   } catch (error) {
+    if (error instanceof DocumentParseError) {
+      throw error;
+    }
+    
     console.error("PDF 文本提取失败:", error);
-    return "";
+    const errorMessage = error instanceof Error ? error.message : "未知错误";
+    throw new DocumentParseError(`PDF 解析失败: ${errorMessage}`);
+  }
+}
+
+async function extractTextFromDOCX(filePath: string): Promise<string> {
+  try {
+    console.log("开始解析 DOCX 文件:", filePath);
+    
+    const mammothModule = await import("mammoth");
+    const mammoth = mammothModule.default || mammothModule;
+    
+    const dataBuffer = await readFile(filePath);
+    console.log("读取 DOCX 文件成功，大小:", dataBuffer.length, "bytes");
+    
+    if (dataBuffer.length === 0) {
+      throw new CorruptedFileError("DOCX");
+    }
+    
+    if (dataBuffer.length < 4) {
+      throw new CorruptedFileError("DOCX");
+    }
+    
+    const signature = dataBuffer.slice(0, 4).toString("hex");
+    if (signature !== "504b0304") {
+      throw new CorruptedFileError("DOCX");
+    }
+    
+    try {
+      const result = await mammoth.extractRawText({ buffer: dataBuffer });
+      const text = result.value || "";
+      
+      console.log("DOCX 解析完成，文本长度:", text.length);
+      
+      if (text.trim().length === 0) {
+        console.warn("DOCX 文件解析后文本为空，可能是仅包含图片的文档");
+        return "";
+      }
+      
+      return text;
+    } catch (docxError) {
+      const errorMessage = docxError instanceof Error ? docxError.message : String(docxError);
+      
+      if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid")) {
+        throw new CorruptedFileError("DOCX");
+      }
+      
+      if (errorMessage.includes("password") || errorMessage.includes("encrypt")) {
+        throw new DocumentParseError("DOCX 文件已加密或受保护，无法解析");
+      }
+      
+      throw docxError;
+    }
+  } catch (error) {
+    if (error instanceof DocumentParseError) {
+      throw error;
+    }
+    
+    console.error("DOCX 文本提取失败:", error);
+    const errorMessage = error instanceof Error ? error.message : "未知错误";
+    throw new DocumentParseError(`DOCX 解析失败: ${errorMessage}`);
   }
 }
 
 async function extractTextFromTXT(filePath: string): Promise<string> {
   try {
+    console.log("开始解析 TXT 文件:", filePath);
+    
     const content = await readFile(filePath, "utf-8");
+    
+    console.log("TXT 解析完成，文本长度:", content.length);
+    
     return content;
   } catch (error) {
     console.error("TXT 文本提取失败:", error);
-    return "";
+    
+    if (error instanceof Error && error.message.includes("encoding")) {
+      throw new DocumentParseError("TXT 文件编码不支持，请使用 UTF-8 编码");
+    }
+    
+    throw new CorruptedFileError("TXT");
   }
 }
 
@@ -117,13 +259,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const isMimeTypeAllowed = ALLOWED_TYPES.includes(file.type);
     const fileExtension = "." + (file.name.split(".").pop()?.toLowerCase() || "");
+    const isMimeTypeAllowed = ALLOWED_TYPES.includes(file.type);
     const isExtensionAllowed = ALLOWED_EXTENSIONS.includes(fileExtension);
 
     if (!isMimeTypeAllowed && !isExtensionAllowed) {
       return NextResponse.json(
-        { message: "不支持的文件类型，只支持 PDF、DOCX、TXT 格式" },
+        { 
+          message: `不支持的文件格式 "${fileExtension}"，仅支持 PDF、DOCX、TXT 格式`,
+          errorType: "UNSUPPORTED_FORMAT"
+        },
         { status: 400 }
       );
     }
@@ -143,10 +288,23 @@ export async function POST(request: NextRequest) {
     await writeFile(filePath, buffer);
 
     let extractedContent = content || "";
-    if (fileExtension === ".pdf") {
-      extractedContent = await extractTextFromPDF(filePath);
-    } else if (fileExtension === ".txt") {
-      extractedContent = await extractTextFromTXT(filePath);
+    let parseError: DocumentParseError | null = null;
+
+    try {
+      if (fileExtension === ".pdf") {
+        extractedContent = await extractTextFromPDF(filePath);
+      } else if (fileExtension === ".docx") {
+        extractedContent = await extractTextFromDOCX(filePath);
+      } else if (fileExtension === ".txt") {
+        extractedContent = await extractTextFromTXT(filePath);
+      }
+    } catch (error) {
+      if (error instanceof DocumentParseError) {
+        parseError = error;
+        console.log("文档解析失败，但继续保存文档记录:", error.message);
+      } else {
+        throw error;
+      }
     }
 
     const textChunks = splitTextIntoChunks(extractedContent);
@@ -213,6 +371,22 @@ export async function POST(request: NextRequest) {
       return newDocument;
     });
 
+    if (parseError) {
+      return NextResponse.json(
+        {
+          message: "文档上传成功，但文本解析遇到问题",
+          parseWarning: parseError.message,
+          warningType: parseError.name,
+          document: {
+            ...document,
+            fileSize: document.fileSize?.toString() || null,
+            chunkCount: textChunks.length,
+          },
+        },
+        { status: 201 }
+      );
+    }
+
     return NextResponse.json(
       {
         message: "上传成功",
@@ -225,6 +399,16 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof DocumentParseError) {
+      return NextResponse.json(
+        { 
+          message: error.message,
+          errorType: error.name
+        },
+        { status: 400 }
+      );
+    }
+    
     if (error instanceof Error) {
       if (error.message === "未授权访问") {
         return NextResponse.json(
@@ -240,9 +424,16 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+    
     console.error("文件上传失败:", error);
+    
+    const errorMessage = error instanceof Error ? error.message : "未知错误";
+    
     return NextResponse.json(
-      { message: "上传失败，请稍后重试" },
+      { 
+        message: `上传失败: ${errorMessage}`,
+        errorType: "INTERNAL_ERROR"
+      },
       { status: 500 }
     );
   }

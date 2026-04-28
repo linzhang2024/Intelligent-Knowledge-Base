@@ -359,7 +359,6 @@ export async function POST(request: NextRequest) {
         try {
           await tx.documentChunk.createMany({
             data: chunkData,
-            skipDuplicates: true,
           });
           console.log(`[RAG 存储] 文档 "${title}" 成功存储 ${chunkData.length} 个片段`);
         } catch (chunkError) {

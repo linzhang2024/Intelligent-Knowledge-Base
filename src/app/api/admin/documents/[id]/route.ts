@@ -223,6 +223,9 @@ export async function DELETE(
 
     const targetDocument = await prisma.document.findUnique({
       where: { id: documentId, deletedAt: null },
+      include: {
+        chunks: true,
+      },
     });
 
     if (!targetDocument) {
@@ -232,9 +235,19 @@ export async function DELETE(
       );
     }
 
-    await prisma.document.update({
-      where: { id: documentId },
-      data: { deletedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      const chunkCount = targetDocument.chunks.length;
+      if (chunkCount > 0) {
+        await tx.documentChunk.deleteMany({
+          where: { documentId },
+        });
+        console.log(`[文档删除] 已删除文档 "${targetDocument.title}" 的 ${chunkCount} 个关联切片`);
+      }
+
+      await tx.document.update({
+        where: { id: documentId },
+        data: { deletedAt: new Date() },
+      });
     });
 
     return NextResponse.json(

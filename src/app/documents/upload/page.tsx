@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+interface KnowledgeBase {
+  id: string;
+  name: string;
+  description: string | null;
+  documentCount: number;
+  createdAt: string;
+}
 
 export default function UploadPage() {
   const [title, setTitle] = useState("");
@@ -15,13 +23,27 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [loadingKb, setLoadingKb] = useState(true);
   const router = useRouter();
 
-  const mockKnowledgeBases = [
-    { id: "1", name: "产品文档库" },
-    { id: "2", name: "技术文档库" },
-    { id: "3", name: "培训材料库" },
-  ];
+  useEffect(() => {
+    const fetchKnowledgeBases = async () => {
+      try {
+        const response = await fetch("/api/kb");
+        if (response.ok) {
+          const data = await response.json();
+          setKnowledgeBases(data.knowledgeBases || []);
+        }
+      } catch (err) {
+        console.error("获取知识库列表失败:", err);
+      } finally {
+        setLoadingKb(false);
+      }
+    };
+
+    fetchKnowledgeBases();
+  }, []);
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes";
@@ -155,19 +177,29 @@ export default function UploadPage() {
                 <label htmlFor="knowledgeBase" className="block text-sm font-medium text-gray-700">
                   所属知识库
                 </label>
-                <select
-                  id="knowledgeBase"
-                  value={knowledgeBaseId}
-                  onChange={(e) => setKnowledgeBaseId(e.target.value)}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  <option value="">请选择知识库</option>
-                  {mockKnowledgeBases.map((kb) => (
-                    <option key={kb.id} value={kb.id}>
-                      {kb.name}
-                    </option>
-                  ))}
-                </select>
+                {loadingKb ? (
+                  <div className="mt-1 flex items-center px-3 py-2 text-sm text-gray-500">
+                    <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    加载中...
+                  </div>
+                ) : (
+                  <select
+                    id="knowledgeBase"
+                    value={knowledgeBaseId}
+                    onChange={(e) => setKnowledgeBaseId(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    <option value="">请选择知识库（可选）</option>
+                    {knowledgeBases.map((kb) => (
+                      <option key={kb.id} value={kb.id}>
+                        {kb.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>

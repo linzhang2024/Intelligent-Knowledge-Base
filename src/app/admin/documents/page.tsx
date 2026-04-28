@@ -15,6 +15,13 @@ interface KnowledgeBase {
   name: string;
 }
 
+interface DocumentChunk {
+  id: string;
+  index: number;
+  content: string;
+  createdAt: string;
+}
+
 interface Document {
   id: string;
   title: string;
@@ -29,6 +36,7 @@ interface Document {
   updatedAt: string;
   author: Author | null;
   knowledgeBase: KnowledgeBase | null;
+  chunks?: DocumentChunk[];
 }
 
 interface Pagination {
@@ -41,6 +49,8 @@ interface Pagination {
 interface PreviewModalState {
   isOpen: boolean;
   document: Document | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
 interface DeleteConfirmModalState {
@@ -60,20 +70,33 @@ const STATUS_COLORS: Record<string, string> = {
   ARCHIVED: "bg-gray-100 text-gray-800",
 };
 
+const formatFileSize = (bytesStr: string | null): string => {
+  if (!bytesStr) return "未知";
+  const bytes = parseInt(bytesStr, 10);
+  if (isNaN(bytes)) return bytesStr;
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
 function PreviewModal({
   isOpen,
   document,
+  isLoading,
+  error,
   onClose,
 }: PreviewModalState & {
   onClose: () => void;
 }) {
-  if (!isOpen || !document) return null;
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4 text-center">
         <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={onClose}></div>
-        <div className="relative w-full max-w-3xl transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
+        <div className="relative w-full max-w-4xl transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-medium text-gray-900">
               预览文档内容
@@ -85,32 +108,129 @@ function PreviewModal({
               ✕
             </button>
           </div>
-          <div className="mb-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">文档标题:</p>
-            <p className="text-sm text-gray-900">{document.title}</p>
-          </div>
-          <div className="mb-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">文件类型:</p>
-            <p className="text-sm text-gray-900">{document.fileType || "未知"}</p>
-          </div>
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">提取的文本内容:</p>
-            <div className="max-h-96 overflow-y-auto bg-gray-50 rounded-md p-4">
-              {document.content && document.content.trim() ? (
-                <pre className="text-sm text-gray-900 whitespace-pre-wrap font-sans">
-                  {document.content}
-                </pre>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-3">⏳</div>
-                  <p className="text-sm text-gray-600 font-medium">内容解析中或解析失败</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    可能原因：PDF 加密、扫描版 PDF、文本提取错误
+
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="inline-flex items-center justify-center">
+                <svg
+                  className="animate-spin h-10 w-10 text-indigo-600"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+              </div>
+              <p className="mt-4 text-sm text-gray-500">正在加载文档详情...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-8">
+              <div className="text-4xl mb-3">⚠️</div>
+              <p className="text-sm text-red-600 font-medium">{error}</p>
+              <p className="text-xs text-gray-400 mt-2">请稍后重试</p>
+            </div>
+          ) : document ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-gray-50 rounded-md p-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">文档标题</p>
+                  <p className="text-sm text-gray-900 font-medium">{document.title}</p>
+                </div>
+                <div className="bg-gray-50 rounded-md p-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">文件类型</p>
+                  <p className="text-sm text-gray-900">{document.fileType || "未知"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-md p-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">文件大小</p>
+                  <p className="text-sm text-gray-900">{formatFileSize(document.fileSize)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-md p-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">所属知识库</p>
+                  <p className="text-sm text-gray-900">{document.knowledgeBase?.name || "无"}</p>
+                </div>
+                <div className="bg-gray-50 rounded-md p-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">状态</p>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[document.status] || "bg-gray-100 text-gray-800"}`}>
+                    {STATUS_LABELS[document.status] || document.status}
+                  </span>
+                </div>
+                <div className="bg-gray-50 rounded-md p-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">切片数量</p>
+                  <p className="text-sm text-gray-900">{document.chunks?.length || 0} 个片段</p>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-gray-700">提取的文本内容</p>
+                  {document.content && (
+                    <span className="text-xs text-gray-500">
+                      共 {document.content.length} 字符
+                    </span>
+                  )}
+                </div>
+                <div className="max-h-96 overflow-y-auto bg-gray-50 rounded-md p-4">
+                  {document.content && document.content.trim() ? (
+                    <pre className="text-sm text-gray-900 whitespace-pre-wrap font-sans leading-relaxed">
+                      {document.content}
+                    </pre>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-4xl mb-3">📄</div>
+                      <p className="text-sm text-gray-600 font-medium">内容解析中或解析失败</p>
+                      <p className="text-xs text-gray-400 mt-2">
+                        可能原因：PDF 加密、扫描版 PDF、文本提取错误
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {document.chunks && document.chunks.length > 0 && (
+                <div className="mt-6">
+                  <p className="text-sm font-medium text-gray-700 mb-2">
+                    向量切片预览（共 {document.chunks.length} 个片段）
                   </p>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {document.chunks.slice(0, 5).map((chunk) => (
+                      <div key={chunk.id} className="bg-blue-50 border border-blue-100 rounded-md p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-blue-600">
+                            片段 #{chunk.index + 1}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {chunk.content.length} 字符
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-700 line-clamp-3">
+                          {chunk.content.substring(0, 200)}
+                          {chunk.content.length > 200 ? "..." : ""}
+                        </p>
+                      </div>
+                    ))}
+                    {document.chunks.length > 5 && (
+                      <p className="text-xs text-gray-500 text-center">
+                        ... 还有 {document.chunks.length - 5} 个片段
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
-            </div>
-          </div>
+            </>
+          ) : null}
+
           <div className="mt-6 flex justify-end">
             <button
               onClick={onClose}
@@ -190,6 +310,8 @@ export default function DocumentsPage() {
   const [previewModal, setPreviewModal] = useState<PreviewModalState>({
     isOpen: false,
     document: null,
+    isLoading: false,
+    error: null,
   });
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<DeleteConfirmModalState>({
     isOpen: false,
@@ -287,17 +409,71 @@ export default function DocumentsPage() {
     }
   };
 
-  const handlePreview = (document: Document) => {
+  const handlePreview = async (document: Document) => {
     setPreviewModal({
       isOpen: true,
-      document,
+      document: null,
+      isLoading: true,
+      error: null,
     });
+
+    try {
+      const response = await fetch(`/api/admin/documents/${document.id}`);
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (response.status === 403) {
+        setPreviewModal({
+          isOpen: true,
+          document: null,
+          isLoading: false,
+          error: "您没有权限查看此文档",
+        });
+        return;
+      }
+
+      if (response.status === 404) {
+        setPreviewModal({
+          isOpen: true,
+          document: null,
+          isLoading: false,
+          error: "文档不存在或已被删除",
+        });
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "获取文档详情失败");
+      }
+
+      const data = await response.json();
+
+      setPreviewModal({
+        isOpen: true,
+        document: data.document,
+        isLoading: false,
+        error: null,
+      });
+    } catch (err) {
+      setPreviewModal({
+        isOpen: true,
+        document: null,
+        isLoading: false,
+        error: err instanceof Error ? err.message : "获取文档详情失败",
+      });
+    }
   };
 
   const handlePreviewClose = () => {
     setPreviewModal({
       isOpen: false,
       document: null,
+      isLoading: false,
+      error: null,
     });
   };
 
@@ -370,6 +546,8 @@ export default function DocumentsPage() {
       <PreviewModal
         isOpen={previewModal.isOpen}
         document={previewModal.document}
+        isLoading={previewModal.isLoading}
+        error={previewModal.error}
         onClose={handlePreviewClose}
       />
       <DeleteConfirmModal

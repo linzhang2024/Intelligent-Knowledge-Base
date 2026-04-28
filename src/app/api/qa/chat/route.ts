@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { semanticSearch, SearchResult } from "@/lib/vectorStore";
+import { semanticSearch, SearchResult, EmbeddingTimeoutError, EmptyVectorStoreError } from "@/lib/vectorStore";
 import { chatWithRAGStream, chatWithRAG, isLLMConfigured, ChatMessage } from "@/lib/llm";
 import { isEmbeddingConfigured } from "@/lib/embedding";
 
@@ -62,20 +62,6 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request);
     
-    if (!isEmbeddingConfigured()) {
-      return NextResponse.json(
-        { message: "Embedding 服务未配置，无法进行语义检索" },
-        { status: 503 }
-      );
-    }
-
-    if (!isLLMConfigured()) {
-      return NextResponse.json(
-        { message: "LLM 服务未配置，无法进行对话" },
-        { status: 503 }
-      );
-    }
-
     const body: ChatRequest = await request.json();
     const {
       message,
@@ -88,64 +74,114 @@ export async function POST(request: NextRequest) {
 
     if (!message || message.trim() === "") {
       return NextResponse.json(
-        { message: "message 参数不能为空" },
+        { message: "message 参数不能为空", errorType: "VALIDATION_ERROR" },
         { status: 400 }
+      );
+    }
+
+    if (!isEmbeddingConfigured()) {
+      return NextResponse.json(
+        { message: "Embedding 服务未配置，无法进行语义检索", errorType: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
+      );
+    }
+
+    if (!isLLMConfigured()) {
+      return NextResponse.json(
+        { message: "LLM 服务未配置，无法进行对话", errorType: "SERVICE_UNAVAILABLE" },
+        { status: 503 }
       );
     }
 
     const startTime = Date.now();
 
     console.log(
-      `[RAG Chat] 用户 "${user.id}" 提问: "${message}"`
+      `[RAG Chat] 用户 "${user.id}" 提问: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"`
     );
-
-    const searchStartTime = Date.now();
-    const searchResults = await semanticSearch(message, {
-      knowledgeBaseId: knowledgeBaseId || undefined,
-      limit: Math.min(limit, 10),
-      minSimilarity: Math.max(minSimilarity, 0.1),
-      userId: user.id,
-    });
-    const searchTime = Date.now() - searchStartTime;
-
-    console.log(
-      `[RAG Chat] 语义检索完成，找到 ${searchResults.length} 个相关片段，耗时 ${searchTime}ms`
-    );
-
-    const sources = buildSources(searchResults);
 
     if (streaming) {
       const stream = new ReadableStream({
         async start(controller) {
           try {
+            let searchResults: SearchResult[] = [];
+            let searchTime = 0;
+            
+            try {
+              const searchStartTime = Date.now();
+              searchResults = await semanticSearch(message, {
+                knowledgeBaseId: knowledgeBaseId || undefined,
+                limit: Math.min(limit, 10),
+                minSimilarity: Math.max(minSimilarity, 0.1),
+                userId: user.id,
+              });
+              searchTime = Date.now() - searchStartTime;
+
+              console.log(
+                `[RAG Chat] 语义检索完成，找到 ${searchResults.length} 个相关片段，耗时 ${searchTime}ms`
+              );
+            } catch (searchError) {
+              console.error("[RAG Chat] 语义检索失败:", searchError);
+              
+              let errorMessage: string;
+              let errorType: string;
+              
+              if (searchError instanceof EmptyVectorStoreError) {
+                errorMessage = searchError.message;
+                errorType = "EMPTY_VECTOR_STORE";
+              } else if (searchError instanceof EmbeddingTimeoutError) {
+                errorMessage = searchError.message;
+                errorType = "EMBEDDING_TIMEOUT";
+              } else {
+                errorMessage = searchError instanceof Error ? searchError.message : "语义检索失败";
+                errorType = "SEARCH_ERROR";
+              }
+              
+              controller.enqueue(
+                createSSEEvent("error", { message: errorMessage, errorType })
+              );
+              controller.close();
+              return;
+            }
+
+            const sources = buildSources(searchResults);
+            
             controller.enqueue(
               createSSEEvent("sources", { sources, searchTime })
             );
 
-            const chatStream = await chatWithRAGStream(
-              message,
-              searchResults,
-              { streaming: true },
-              history
-            );
-
-            for await (const chunk of chatStream) {
-              controller.enqueue(
-                createSSEEvent("content", { content: chunk })
+            try {
+              const chatStream = await chatWithRAGStream(
+                message,
+                searchResults,
+                { streaming: true },
+                history
               );
+
+              for await (const chunk of chatStream) {
+                controller.enqueue(
+                  createSSEEvent("content", { content: chunk })
+                );
+              }
+
+              const totalTime = Date.now() - startTime;
+              controller.enqueue(
+                createSSEEvent("done", { totalTime })
+              );
+
+              controller.close();
+            } catch (llmError) {
+              console.error("[RAG Chat] LLM 调用失败:", llmError);
+              const errorMessage = llmError instanceof Error ? llmError.message : "LLM 服务调用失败";
+              controller.enqueue(
+                createSSEEvent("error", { message: errorMessage, errorType: "LLM_ERROR" })
+              );
+              controller.close();
             }
-
-            const totalTime = Date.now() - startTime;
-            controller.enqueue(
-              createSSEEvent("done", { totalTime })
-            );
-
-            controller.close();
           } catch (error) {
             console.error("[RAG Chat] 流式输出错误:", error);
             const errorMessage = error instanceof Error ? error.message : "未知错误";
             controller.enqueue(
-              createSSEEvent("error", { message: errorMessage })
+              createSSEEvent("error", { message: errorMessage, errorType: "INTERNAL_ERROR" })
             );
             controller.close();
           }
@@ -160,6 +196,56 @@ export async function POST(request: NextRequest) {
         },
       });
     } else {
+      let searchResults: SearchResult[] = [];
+      let searchTime = 0;
+      
+      try {
+        const searchStartTime = Date.now();
+        searchResults = await semanticSearch(message, {
+          knowledgeBaseId: knowledgeBaseId || undefined,
+          limit: Math.min(limit, 10),
+          minSimilarity: Math.max(minSimilarity, 0.1),
+          userId: user.id,
+        });
+        searchTime = Date.now() - searchStartTime;
+
+        console.log(
+          `[RAG Chat] 语义检索完成，找到 ${searchResults.length} 个相关片段，耗时 ${searchTime}ms`
+        );
+      } catch (searchError) {
+        console.error("[RAG Chat] 语义检索失败:", searchError);
+        
+        let errorMessage: string;
+        let status: number;
+        
+        if (searchError instanceof EmptyVectorStoreError) {
+          errorMessage = searchError.message;
+          status = 200;
+          return NextResponse.json(
+            { 
+              message: errorMessage, 
+              errorType: "EMPTY_VECTOR_STORE",
+              answer: "",
+              sources: [],
+            },
+            { status }
+          );
+        } else if (searchError instanceof EmbeddingTimeoutError) {
+          errorMessage = searchError.message;
+          status = 504;
+        } else {
+          errorMessage = searchError instanceof Error ? searchError.message : "语义检索失败";
+          status = 500;
+        }
+        
+        return NextResponse.json(
+          { message: errorMessage, errorType: "SEARCH_ERROR" },
+          { status }
+        );
+      }
+
+      const sources = buildSources(searchResults);
+      
       const answer = await chatWithRAG(
         message,
         searchResults,
@@ -184,14 +270,14 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error) {
       if (error.message === "未授权访问") {
         return NextResponse.json(
-          { message: "未登录，请先登录" },
+          { message: "未登录，请先登录", errorType: "UNAUTHORIZED" },
           { status: 401 }
         );
       }
       if (error.message === "账号待审核，请联系管理员" || 
           error.message === "账号已被禁用，请联系管理员") {
         return NextResponse.json(
-          { message: error.message },
+          { message: error.message, errorType: "FORBIDDEN" },
           { status: 403 }
         );
       }
@@ -201,7 +287,7 @@ export async function POST(request: NextRequest) {
     const errorMessage = error instanceof Error ? error.message : "未知错误";
 
     return NextResponse.json(
-      { message: `对话失败: ${errorMessage}` },
+      { message: `对话失败: ${errorMessage}`, errorType: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }

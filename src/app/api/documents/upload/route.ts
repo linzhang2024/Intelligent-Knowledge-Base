@@ -9,6 +9,43 @@ import { requireAuth, getCurrentUserId } from "@/lib/auth";
 const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const CHUNK_SIZE = 500;
+const CHUNK_OVERLAP = 50;
+
+function splitTextIntoChunks(text: string, chunkSize: number = CHUNK_SIZE, overlap: number = CHUNK_OVERLAP): string[] {
+  if (!text || text.length === 0) {
+    return [];
+  }
+
+  const chunks: string[] = [];
+  const sentences = text.split(/([。！？.!?\n])/).filter(s => s.trim());
+  
+  let currentChunk = "";
+  
+  for (let i = 0; i < sentences.length; i += 2) {
+    const sentence = sentences[i] + (sentences[i + 1] || "");
+    
+    if (currentChunk.length + sentence.length > chunkSize && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      
+      if (overlap > 0 && currentChunk.length > overlap) {
+        const lastPart = currentChunk.slice(-overlap);
+        const lastSentenceMatch = lastPart.match(/[^。！？.!?\n]*[。！？.!?\n]?$/);
+        currentChunk = lastSentenceMatch ? lastSentenceMatch[0] : lastPart;
+      } else {
+        currentChunk = "";
+      }
+    }
+    
+    currentChunk += sentence;
+  }
+  
+  if (currentChunk.trim().length > 0) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
+}
 
 export const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
@@ -110,6 +147,13 @@ export async function POST(request: NextRequest) {
       extractedContent = await extractTextFromPDF(filePath);
     } else if (fileExtension === ".txt") {
       extractedContent = await extractTextFromTXT(filePath);
+    }
+
+    const textChunks = splitTextIntoChunks(extractedContent);
+    console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
+    console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
+    if (textChunks.length > 0) {
+      console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
     }
 
     const document = await prisma.document.create({

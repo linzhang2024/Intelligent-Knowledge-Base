@@ -1,7 +1,7 @@
 const net = require('net');
 const { exec } = require('child_process');
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3005;
 
 function checkPort(port) {
   return new Promise((resolve, reject) => {

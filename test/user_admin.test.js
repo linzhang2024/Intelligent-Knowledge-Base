@@ -1,6 +1,6 @@
 const http = require('http');
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = 'http://localhost:3005';
 
 let testResults = [];
 let allPassed = true;

@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'http://localhost:3001';
+const BASE_URL = 'http://localhost:3005';
 
 let testResults = [];
 let allPassed = true;

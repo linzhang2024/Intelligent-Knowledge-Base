@@ -91,7 +91,7 @@ npx prisma migrate dev --name init
 npm run dev
 ```
 
-访问 http://localhost:3001 查看应用（默认端口已改为 3001）。
+访问 http://localhost:3005 查看应用（默认端口已改为 3005）。
 
 ## 项目结构
 
@@ -281,7 +281,7 @@ docker-compose logs -f postgres
 2. **权限控制**：知识库访问权限检查，只有所有者可以访问
 3. **输入验证**：文件上传类型和大小验证
 4. **错误处理**：统一的错误处理和安全的错误信息返回
-5. **端口安全**：默认端口改为 3001，避免端口冲突
+5. **端口安全**：默认端口改为 3005，避免端口冲突
 
 ## 测试
 
@@ -304,12 +304,12 @@ node test/security_export.test.js
 
 ## 故障排除
 
-### 问题 1：端口 3001 被占用
+### 问题 1：端口 3005 被占用
 
 **解决方案**：
-1. 关闭占用端口 3001 的进程
+1. 关闭占用端口 3005 的进程
 2. 或者使用其他端口：`PORT=3002 npm run dev`
-3. 查看占用进程：`netstat -ano | findstr :3001`
+3. 查看占用进程：`netstat -ano | findstr :3005`
 
 ### 问题 2：Prisma migrate 失败
 
@@ -391,7 +391,7 @@ npx prisma migrate dev
 2. **配置数据库**：复制 `.env.example` 为 `.env` 并配置
 3. **执行迁移**：`npx prisma migrate dev --name init`
 4. **启动服务器**：`npm run dev`
-5. **访问应用**：http://localhost:3001
+5. **访问应用**：http://localhost:3005
 6. **登录系统**：使用任意邮箱和密码登录（会自动创建用户）
 7. **创建知识库**：登录后会自动创建默认知识库
 8. **上传文档**：点击 "上传文档" 按钮

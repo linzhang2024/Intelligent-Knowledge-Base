@@ -50,6 +50,7 @@ model Document {
   status          String      @default("DRAFT")
   authorId        String?
   knowledgeBaseId String?
+  vectorId        String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   deletedAt       DateTime?

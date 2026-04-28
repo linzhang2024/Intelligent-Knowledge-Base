@@ -1,42 +1,60 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatFileSize } from "@/lib/format";
+
+interface Stats {
+  totalUsers: number;
+  totalDocuments: number;
+  totalKnowledgeBases: number;
+  totalStorageBytes: number;
+}
 
 type TabType = "overview" | "users" | "documents" | "knowledge-bases" | "settings";
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const mockStats = {
-    totalUsers: 156,
-    totalDocuments: 1248,
-    totalKnowledgeBases: 24,
-    storageUsed: "2.4 GB",
-  };
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-  const mockUsers = [
-    { id: "1", name: "张三", email: "zhangsan@company.com", role: "ADMIN", status: "active" },
-    { id: "2", name: "李四", email: "lisi@company.com", role: "USER", status: "active" },
-    { id: "3", name: "王五", email: "wangwu@company.com", role: "USER", status: "inactive" },
-    { id: "4", name: "赵六", email: "zhaoliu@company.com", role: "USER", status: "active" },
-  ];
+        const response = await fetch("/api/admin/stats");
 
-  const mockDocuments = [
-    { id: "1", title: "API 接口规范 v2.0", author: "张三", status: "PUBLISHED", updatedAt: "2024-01-15", fileSize: 1536000 },
-    { id: "2", title: "数据库设计文档", author: "李四", status: "DRAFT", updatedAt: "2024-01-14", fileSize: 512000 },
-    { id: "3", title: "前端代码规范", author: "王五", status: "PUBLISHED", updatedAt: "2024-01-13", fileSize: 256000 },
-    { id: "4", title: "系统架构说明", author: "张三", status: "ARCHIVED", updatedAt: "2024-01-10", fileSize: 3145728 },
-  ];
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
 
-  const mockKnowledgeBases = [
-    { id: "1", name: "产品文档库", owner: "张三", docCount: 24, createdAt: "2023-10-01" },
-    { id: "2", name: "技术文档库", owner: "李四", docCount: 56, createdAt: "2023-09-15" },
-    { id: "3", name: "培训材料库", owner: "王五", docCount: 12, createdAt: "2023-11-20" },
-  ];
+        if (response.status === 403) {
+          setError("您没有权限访问此页面，请联系管理员");
+          return;
+        }
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.message || "获取统计数据失败");
+        }
+
+        const data = await response.json();
+        setStats(data.stats);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "获取统计数据失败");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   const tabs = [
     { id: "overview" as TabType, label: "概览" },
@@ -128,44 +146,69 @@ export default function AdminPage() {
             {activeTab === "overview" && (
               <div>
                 <h2 className="text-lg font-medium text-gray-900 mb-6">系统概览</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-blue-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                      <div className="text-3xl">👥</div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-500">总用户数</p>
-                        <p className="text-2xl font-semibold text-gray-900">{mockStats.totalUsers}</p>
+                {loading ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="bg-gray-50 rounded-lg p-6">
+                        <div className="animate-pulse">
+                          <div className="h-8 w-8 bg-gray-200 rounded mb-4"></div>
+                          <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+                          <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : error ? (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-4">⚠️</div>
+                    <p className="text-sm text-red-600">{error}</p>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="mt-4 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                    >
+                      重试
+                    </button>
+                  </div>
+                ) : stats ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="bg-blue-50 rounded-lg p-6">
+                      <div className="flex items-center">
+                        <div className="text-3xl">👥</div>
+                        <div className="ml-4">
+                          <p className="text-sm font-medium text-gray-500">总用户数</p>
+                          <p className="text-2xl font-semibold text-gray-900">{stats.totalUsers}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-6">
+                      <div className="flex items-center">
+                        <div className="text-3xl">📄</div>
+                        <div className="ml-4">
+                          <p className="text-sm font-medium text-gray-500">总文档数</p>
+                          <p className="text-2xl font-semibold text-gray-900">{stats.totalDocuments}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-purple-50 rounded-lg p-6">
+                      <div className="flex items-center">
+                        <div className="text-3xl">📚</div>
+                        <div className="ml-4">
+                          <p className="text-sm font-medium text-gray-500">知识库数量</p>
+                          <p className="text-2xl font-semibold text-gray-900">{stats.totalKnowledgeBases}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-yellow-50 rounded-lg p-6">
+                      <div className="flex items-center">
+                        <div className="text-3xl">💾</div>
+                        <div className="ml-4">
+                          <p className="text-sm font-medium text-gray-500">存储使用</p>
+                          <p className="text-2xl font-semibold text-gray-900">{formatFileSize(stats.totalStorageBytes)}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div className="bg-green-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                      <div className="text-3xl">📄</div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-500">总文档数</p>
-                        <p className="text-2xl font-semibold text-gray-900">{mockStats.totalDocuments}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                      <div className="text-3xl">📚</div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-500">知识库数量</p>
-                        <p className="text-2xl font-semibold text-gray-900">{mockStats.totalKnowledgeBases}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-yellow-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                      <div className="text-3xl">💾</div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-500">存储使用</p>
-                        <p className="text-2xl font-semibold text-gray-900">{mockStats.storageUsed}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                ) : null}
               </div>
             )}
 

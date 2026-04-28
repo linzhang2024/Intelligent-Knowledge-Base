@@ -1,13 +1,72 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatDate, formatFileSize } from "@/lib/format";
+
+interface KnowledgeBase {
+  id: string;
+  name: string;
+  description: string | null;
+  documentCount: number;
+  createdAt: string;
+}
+
+interface Document {
+  id: string;
+  title: string;
+  content: string | null;
+  fileUrl: string | null;
+  fileType: string | null;
+  fileSize: string | null;
+  status: string;
+  authorId: string | null;
+  knowledgeBaseId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  knowledgeBase?: {
+    id: string;
+    name: string;
+  } | null;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [loadingKb, setLoadingKb] = useState(true);
+  const [loadingDocs, setLoadingDocs] = useState(true);
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [exportResult, setExportResult] = useState<{ kbId: string; data: unknown } | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [kbResponse, docsResponse] = await Promise.all([
+          fetch("/api/kb"),
+          fetch("/api/documents?limit=5"),
+        ]);
+
+        if (kbResponse.ok) {
+          const kbData = await kbResponse.json();
+          setKnowledgeBases(kbData.knowledgeBases || []);
+        }
+
+        if (docsResponse.ok) {
+          const docsData = await docsResponse.json();
+          setDocuments(docsData.documents || []);
+        }
+      } catch (error) {
+        console.error("获取数据失败:", error);
+      } finally {
+        setLoadingKb(false);
+        setLoadingDocs(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -23,12 +82,6 @@ export default function DashboardPage() {
       router.push("/login");
     }
   };
-
-  const mockKnowledgeBases = [
-    { id: "1", name: "产品文档库", docCount: 24, description: "产品相关的文档和规范" },
-    { id: "2", name: "技术文档库", docCount: 56, description: "技术架构和开发指南" },
-    { id: "3", name: "培训材料库", docCount: 12, description: "新员工培训和入职资料" },
-  ];
 
   const handleExport = async (kbId: string, kbName: string) => {
     setExportingId(kbId);
@@ -52,11 +105,26 @@ export default function DashboardPage() {
     }
   };
 
-  const mockRecentDocs = [
-    { id: "1", title: "API 接口规范 v2.0", updatedAt: "2024-01-15", status: "已发布" },
-    { id: "2", title: "数据库设计文档", updatedAt: "2024-01-14", status: "草稿" },
-    { id: "3", title: "前端代码规范", updatedAt: "2024-01-13", status: "已发布" },
-  ];
+  const getStatusText = (status: string) => {
+    const statusMap: Record<string, string> = {
+      DRAFT: "草稿",
+      PUBLISHED: "已发布",
+      ARCHIVED: "已归档",
+    };
+    return statusMap[status] || status;
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case "PUBLISHED":
+        return "bg-green-100 text-green-800";
+      case "ARCHIVED":
+        return "bg-gray-100 text-gray-800";
+      case "DRAFT":
+      default:
+        return "bg-yellow-100 text-yellow-800";
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -89,43 +157,64 @@ export default function DashboardPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">我的知识库</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {mockKnowledgeBases.map((kb) => (
-              <div
-                key={kb.id}
-                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow"
-              >
-                <div className="p-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-gray-900">{kb.name}</h3>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {kb.docCount} 文档
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm text-gray-500">{kb.description}</p>
-                  <div className="mt-4 flex space-x-2">
-                    <button
-                      onClick={() => handleExport(kb.id, kb.name)}
-                      disabled={exportingId === kb.id}
-                      className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {exportingId === kb.id ? (
-                        <>
-                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          导出中...
-                        </>
-                      ) : (
-                        "导出为 PDF"
-                      )}
-                    </button>
+          
+          {loadingKb ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-white overflow-hidden shadow rounded-lg p-6">
+                  <div className="animate-pulse">
+                    <div className="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
+                    <div className="h-4 bg-gray-200 rounded w-full mb-4"></div>
+                    <div className="h-10 bg-gray-200 rounded"></div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : knowledgeBases.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {knowledgeBases.map((kb) => (
+                <div
+                  key={kb.id}
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow"
+                >
+                  <div className="p-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium text-gray-900">{kb.name}</h3>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {kb.documentCount} 文档
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-500">{kb.description || "暂无描述"}</p>
+                    <div className="mt-4 flex space-x-2">
+                      <button
+                        onClick={() => handleExport(kb.id, kb.name)}
+                        disabled={exportingId === kb.id}
+                        className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {exportingId === kb.id ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            导出中...
+                          </>
+                        ) : (
+                          "导出为 PDF"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white shadow-sm rounded-lg p-8 text-center">
+              <span className="text-4xl">📚</span>
+              <h3 className="mt-4 text-lg font-medium text-gray-900">暂无知识库</h3>
+              <p className="mt-2 text-gray-500">创建知识库来组织和管理您的文档</p>
+            </div>
+          )}
 
           {exportResult && (
             <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -154,45 +243,92 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-900">最近文档</h2>
             <Link
-              href="#"
+              href="/admin"
               className="text-sm text-indigo-600 hover:text-indigo-500"
             >
               查看全部
             </Link>
           </div>
-          <div className="bg-white shadow overflow-hidden sm:rounded-md">
-            <ul className="divide-y divide-gray-200">
-              {mockRecentDocs.map((doc) => (
-                <li key={doc.id}>
-                  <Link
-                    href={`/documents/${doc.id}`}
-                    className="block hover:bg-gray-50"
-                  >
-                    <div className="px-4 py-4 sm:px-6">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-indigo-600 truncate">
-                          {doc.title}
-                        </p>
-                        <div className="ml-2 flex-shrink-0 flex">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${doc.status === "已发布" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}
-                          >
-                            {doc.status}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mt-2 sm:flex sm:justify-between">
-                        <div className="sm:flex"></div>
-                        <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                          <p>更新于 {doc.updatedAt}</p>
-                        </div>
-                      </div>
+          
+          {loadingDocs ? (
+            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+              <ul className="divide-y divide-gray-200">
+                {[1, 2, 3].map((i) => (
+                  <li key={i} className="px-4 py-4 sm:px-6">
+                    <div className="animate-pulse">
+                      <div className="h-5 bg-gray-200 rounded w-1/3 mb-2"></div>
+                      <div className="h-4 bg-gray-200 rounded w-1/4"></div>
                     </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : documents.length > 0 ? (
+            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+              <ul className="divide-y divide-gray-200">
+                {documents.map((doc) => (
+                  <li key={doc.id}>
+                    <Link
+                      href={`/documents/${doc.id}`}
+                      className="block hover:bg-gray-50"
+                    >
+                      <div className="px-4 py-4 sm:px-6">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <p className="text-sm font-medium text-indigo-600 truncate">
+                              {doc.title}
+                            </p>
+                            {doc.fileType && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                {doc.fileType.toUpperCase()}
+                              </span>
+                            )}
+                            {doc.fileSize && (
+                              <span className="text-xs text-gray-400">
+                                {formatFileSize(BigInt(doc.fileSize))}
+                              </span>
+                            )}
+                          </div>
+                          <div className="ml-2 flex-shrink-0 flex">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClass(doc.status)}`}
+                            >
+                              {getStatusText(doc.status)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2 sm:flex sm:justify-between">
+                          <div className="sm:flex">
+                            {doc.knowledgeBase && (
+                              <p className="flex items-center text-sm text-gray-500">
+                                <span className="mr-1">📁</span>
+                                {doc.knowledgeBase.name}
+                              </p>
+                            )}
+                          </div>
+                          <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
+                            <p>更新于 {formatDate(new Date(doc.updatedAt))}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="bg-white shadow-sm rounded-lg p-8 text-center">
+              <span className="text-4xl">📄</span>
+              <h3 className="mt-4 text-lg font-medium text-gray-900">暂无文档</h3>
+              <p className="mt-2 text-gray-500">上传您的第一个文档开始使用</p>
+              <Link
+                href="/documents/upload"
+                className="inline-flex items-center mt-4 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+              >
+                上传文档
+              </Link>
+            </div>
+          )}
         </div>
       </main>
     </div>

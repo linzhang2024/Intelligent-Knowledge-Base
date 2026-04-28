@@ -44,11 +44,13 @@ npm install
 #### 方案一：使用 SQLite（推荐，无需 Docker）
 
 1. 复制环境变量模板：
+
 ```bash
 cp .env.example .env
 ```
 
-2. 编辑 `.env` 文件，确保使用 SQLite 配置：
+1. 编辑 `.env` 文件，确保使用 SQLite 配置：
+
 ```env
 # 使用 SQLite（轻量级替代方案，无需 Docker）
 DATABASE_URL="file:./dev.db"
@@ -57,16 +59,19 @@ DATABASE_URL="file:./dev.db"
 #### 方案二：使用 Docker Compose + PostgreSQL
 
 1. 复制环境变量模板：
+
 ```bash
 cp .env.example .env
 ```
 
-2. 启动 PostgreSQL 服务：
+1. 启动 PostgreSQL 服务：
+
 ```bash
 docker-compose up -d
 ```
 
-3. 检查数据库状态：
+1. 检查数据库状态：
+
 ```bash
 docker-compose ps
 ```
@@ -91,7 +96,7 @@ npx prisma migrate dev --name init
 npm run dev
 ```
 
-访问 http://localhost:3005 查看应用（默认端口已改为 3005）。
+访问 <http://localhost:3005> 查看应用（默认端口已改为 3005）。
 
 ## 项目结构
 
@@ -131,11 +136,13 @@ npm run dev
 ## 页面结构
 
 ### 1. 登录页面 (`/login`)
+
 - 用户登录界面
 - 支持自动创建新用户
 - 登录成功后跳转到仪表盘
 
 ### 2. 仪表盘 (`/dashboard`)
+
 - 我的知识库列表
 - 知识库导出功能
 - 最近文档列表
@@ -143,17 +150,20 @@ npm run dev
 - 管理后台入口
 
 ### 3. 文档上传 (`/documents/upload`)
+
 - 文档基本信息填写
 - 文件上传（支持 PDF、DOCX、TXT）
 - 文件类型和大小验证
 
 ### 4. 文档详情 (`/documents/[id]`)
+
 - 文档内容展示
 - 文档信息查看
 - 附件下载
 - 操作记录
 
 ### 5. 管理后台 (`/admin`)
+
 - 系统概览
 - 用户管理
 - 文档管理
@@ -163,18 +173,22 @@ npm run dev
 ## API 路由
 
 ### 认证相关
+
 - `POST /api/auth/login` - 用户登录
 - `POST /api/auth/logout` - 用户登出
 
 ### 文档相关
+
 - `POST /api/documents/upload` - 上传文档
 - `GET /api/uploads/[filename]` - 访问上传的文件
 
 ### 知识库相关
+
 - `GET /api/kb/[id]/export` - 导出知识库
 - `GET /api/kb/[id]/members` - 查看知识库成员
 
 ### 测试相关
+
 - `GET /api/test/retrieve` - 测试文档检索
 - `POST /api/test/retrieve` - 添加测试文档
 - `DELETE /api/test/retrieve` - 删除测试文档
@@ -182,6 +196,7 @@ npm run dev
 ## 数据库模型
 
 ### User（用户）
+
 - `id`: 唯一标识符
 - `email`: 邮箱（唯一）
 - `password`: 密码
@@ -191,6 +206,7 @@ npm run dev
 - `updatedAt`: 更新时间
 
 ### KnowledgeBase（知识库）
+
 - `id`: 唯一标识符
 - `name`: 名称
 - `description`: 描述（可选）
@@ -199,6 +215,7 @@ npm run dev
 - `updatedAt`: 更新时间
 
 ### Document（文档）
+
 - `id`: 唯一标识符
 - `title`: 标题
 - `content`: 内容（可选）
@@ -213,14 +230,14 @@ npm run dev
 
 ## 环境变量
 
-| 变量名 | 描述 | 默认值 |
-|--------|------|--------|
-| DATABASE_URL | 数据库连接字符串 | - |
-| DB_USER | PostgreSQL 用户名 | postgres |
-| DB_PASSWORD | PostgreSQL 密码 | postgres |
-| DB_NAME | PostgreSQL 数据库名 | intelligent_knowledge_base |
-| DB_PORT | PostgreSQL 端口 | 5432 |
-| DB_HOST | PostgreSQL 主机 | localhost |
+| 变量名           | 描述              | 默认值                          |
+| ------------- | --------------- | ---------------------------- |
+| DATABASE\_URL | 数据库连接字符串        | -                            |
+| DB\_USER      | PostgreSQL 用户名  | postgres                     |
+| DB\_PASSWORD  | PostgreSQL 密码   | postgres                     |
+| DB\_NAME      | PostgreSQL 数据库名 | intelligent\_knowledge\_base |
+| DB\_PORT      | PostgreSQL 端口   | 5432                         |
+| DB\_HOST      | PostgreSQL 主机   | localhost                    |
 
 ## 常用命令
 
@@ -307,6 +324,7 @@ node test/security_export.test.js
 ### 问题 1：端口 3005 被占用
 
 **解决方案**：
+
 1. 关闭占用端口 3005 的进程
 2. 或者使用其他端口：`PORT=3002 npm run dev`
 3. 查看占用进程：`netstat -ano | findstr :3005`
@@ -314,18 +332,22 @@ node test/security_export.test.js
 ### 问题 2：Prisma migrate 失败
 
 **解决方案**：
+
 1. 确保 `.env` 文件配置正确
 2. 对于 SQLite，删除旧的数据库文件后重试：
+
 ```bash
 rm -f dev.db
 rm -f dev.db-journal
 npx prisma migrate dev
 ```
-3. 对于 PostgreSQL，确保 Docker 服务正在运行
+
+1. 对于 PostgreSQL，确保 Docker 服务正在运行
 
 ### 问题 3：文件上传失败
 
 **解决方案**：
+
 1. 检查文件类型是否支持（PDF、DOCX、TXT）
 2. 检查文件大小是否超过 10MB 限制
 3. 确保 uploads 目录存在且有写入权限
@@ -341,26 +363,31 @@ npx prisma migrate dev
 ## 功能特性
 
 ### 📄 文档管理
+
 - 支持多种文件格式上传
 - 文档状态管理（草稿、已发布、已归档）
 - 文档内容和附件管理
 
 ### 📚 知识库
+
 - 知识库创建和管理
 - 知识库成员管理
 - 知识库导出功能
 
 ### 🔍 智能搜索
+
 - 基于关键词的文档检索
 - 相关性评分
 - 搜索结果高亮
 
 ### 🔐 权限控制
+
 - 用户认证
 - 角色管理
 - 知识库访问权限
 
 ### 📊 管理后台
+
 - 系统概览统计
 - 用户管理
 - 文档管理
@@ -391,9 +418,10 @@ npx prisma migrate dev
 2. **配置数据库**：复制 `.env.example` 为 `.env` 并配置
 3. **执行迁移**：`npx prisma migrate dev --name init`
 4. **启动服务器**：`npm run dev`
-5. **访问应用**：http://localhost:3005
+5. **访问应用**：<http://localhost:3005>
 6. **登录系统**：使用任意邮箱和密码登录（会自动创建用户）
 7. **创建知识库**：登录后会自动创建默认知识库
 8. **上传文档**：点击 "上传文档" 按钮
 9. **搜索文档**：使用搜索功能查找文档
 10. **管理系统**：点击 "管理后台" 进入管理界面
+

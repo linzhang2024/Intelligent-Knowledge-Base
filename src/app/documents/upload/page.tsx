@@ -21,6 +21,11 @@ interface KnowledgeBase {
 interface UploadResult {
   success: boolean;
   documentId?: string;
+  documentTitle?: string;
+  fileType?: string;
+  fileSize?: string;
+  totalWords?: number;
+  chunkCount?: number;
   warning?: string;
   warningType?: string;
   error?: string;
@@ -206,6 +211,11 @@ export default function UploadPage() {
         setUploadResult({
           success: true,
           documentId: data.document.id,
+          documentTitle: data.document.title,
+          fileType: data.document.fileType,
+          fileSize: data.document.fileSize,
+          totalWords: data.document.content?.length || 0,
+          chunkCount: data.document.chunkCount,
           warning: data.parseWarning,
           warningType: data.warningType,
         });
@@ -213,14 +223,15 @@ export default function UploadPage() {
         setUploadResult({
           success: true,
           documentId: data.document.id,
+          documentTitle: data.document.title,
+          fileType: data.document.fileType,
+          fileSize: data.document.fileSize,
+          totalWords: data.document.content?.length || 0,
+          chunkCount: data.document.chunkCount,
         });
       }
 
       await simulateProgress("success", 95, 100, 200);
-
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 2000);
 
     } catch (err) {
       setUploadStage("error");
@@ -269,88 +280,168 @@ export default function UploadPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {error && uploadStage !== "idle" && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <span className="text-red-500 text-xl">⚠️</span>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">上传失败</h3>
-                <p className="text-sm text-red-600 mt-1">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {warning && (
-          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <span className="text-yellow-500 text-xl">⚠️</span>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-yellow-800">解析警告</h3>
-                <p className="text-sm text-yellow-600 mt-1">{warning}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {uploadResult?.success && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <span className="text-green-500 text-xl">✓</span>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-green-800">上传成功！</h3>
-                <p className="text-sm text-green-600 mt-1">
-                  文档已成功上传，2秒后将自动跳转回列表页...
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {uploadStage !== "idle" && (
-          <div className="mb-6 bg-white shadow-sm rounded-lg p-6">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-gray-700">
-                {STAGE_LABELS[uploadStage]}
-              </span>
-              <span className="text-sm text-gray-500">
-                {Math.round(uploadProgress)}%
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                className={`h-2.5 rounded-full transition-all duration-300 ${getProgressBarColor()}`}
-                style={{ width: `${uploadProgress}%` }}
-              ></div>
-            </div>
-            <div className="mt-4 flex space-x-2">
-              {["uploading", "parsing", "chunking", "success"].map((stage, index) => (
-                <div key={stage} className="flex-1">
-                  <div className={`h-1 rounded ${
-                    uploadStage === stage || 
-                    ["success", "chunking", "parsing", "uploading"].indexOf(uploadStage) > index
-                      ? "bg-indigo-500"
-                      : "bg-gray-200"
-                  }`}></div>
-                  <p className="text-xs text-gray-500 mt-1 text-center">
-                    {stage === "uploading" && "上传"}
-                    {stage === "parsing" && "解析"}
-                    {stage === "chunking" && "切片"}
-                    {stage === "success" && "完成"}
+        {uploadResult?.success ? (
+          <div className="bg-white shadow-sm rounded-lg overflow-hidden">
+            <div className="bg-green-50 border-b border-green-200 px-6 py-4">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <span className="text-green-500 text-3xl">✓</span>
+                </div>
+                <div className="ml-4">
+                  <h3 className="text-lg font-medium text-green-800">上传成功！</h3>
+                  <p className="text-sm text-green-600 mt-1">
+                    文档 "{uploadResult.documentTitle}" 已成功上传并完成解析
                   </p>
                 </div>
-              ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-6">
+              <h4 className="text-lg font-medium text-gray-900 mb-4">文件解析统计</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <span className="text-blue-600">📄</span>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-gray-500">文件格式</p>
+                      <p className="text-lg font-medium text-gray-900">
+                        {uploadResult.fileType || "未知"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                      <span className="text-purple-600">📊</span>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-gray-500">文件大小</p>
+                      <p className="text-lg font-medium text-gray-900">
+                        {uploadResult.fileSize ? formatFileSize(parseInt(uploadResult.fileSize)) : "未知"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                      <span className="text-green-600">✍️</span>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-gray-500">总字数</p>
+                      <p className="text-lg font-medium text-gray-900">
+                        {uploadResult.totalWords?.toLocaleString() || 0} 字符
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                      <span className="text-orange-600">🧩</span>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-gray-500">分片数</p>
+                      <p className="text-lg font-medium text-gray-900">
+                        {uploadResult.chunkCount || 0} 个片段
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {warning && (
+                <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <span className="text-yellow-500 text-xl">⚠️</span>
+                    </div>
+                    <div className="ml-3">
+                      <h4 className="text-sm font-medium text-yellow-800">解析警告</h4>
+                      <p className="text-sm text-yellow-600 mt-1">{warning}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-8 flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  className="inline-flex items-center px-6 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  继续上传
+                </button>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  返回列表
+                </Link>
+              </div>
             </div>
           </div>
-        )}
+        ) : (
+          <>
+            {error && uploadStage !== "idle" && (
+              <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <span className="text-red-500 text-xl">⚠️</span>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">上传失败</h3>
+                    <p className="text-sm text-red-600 mt-1">{error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+            {uploadStage !== "idle" && (
+              <div className="mb-6 bg-white shadow-sm rounded-lg p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-gray-700">
+                    {STAGE_LABELS[uploadStage]}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    {Math.round(uploadProgress)}%
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div
+                    className={`h-2.5 rounded-full transition-all duration-300 ${getProgressBarColor()}`}
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
+                </div>
+                <div className="mt-4 flex space-x-2">
+                  {["uploading", "parsing", "chunking", "success"].map((stage, index) => (
+                    <div key={stage} className="flex-1">
+                      <div className={`h-1 rounded ${
+                        uploadStage === stage || 
+                        ["success", "chunking", "parsing", "uploading"].indexOf(uploadStage) > index
+                          ? "bg-indigo-500"
+                          : "bg-gray-200"
+                      }`}></div>
+                      <p className="text-xs text-gray-500 mt-1 text-center">
+                        {stage === "uploading" && "上传"}
+                        {stage === "parsing" && "解析"}
+                        {stage === "chunking" && "切片"}
+                        {stage === "success" && "完成"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-white shadow-sm rounded-lg p-6">
             <h2 className="text-lg font-medium text-gray-900 mb-4">基本信息</h2>
             
@@ -518,6 +609,8 @@ export default function UploadPage() {
             )}
           </div>
         </form>
+          </>
+        )}
       </main>
     </div>
   );

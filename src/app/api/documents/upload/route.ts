@@ -156,17 +156,61 @@ export async function POST(request: NextRequest) {
       console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
     }
 
-    const document = await prisma.document.create({
-      data: {
-        title,
-        content: extractedContent || null,
-        fileUrl: `/uploads/${uniqueFileName}`,
-        fileType: fileExtension.substring(1).toUpperCase(),
-        fileSize: BigInt(file.size),
-        status: DOCUMENT_STATUS.DRAFT,
-        authorId: currentUserId,
-        knowledgeBaseId: knowledgeBaseId || null,
-      },
+    if (knowledgeBaseId && knowledgeBaseId.trim()) {
+      const kb = await prisma.knowledgeBase.findUnique({
+        where: { id: knowledgeBaseId },
+        select: { id: true, ownerId: true },
+      });
+
+      if (!kb) {
+        return NextResponse.json(
+          { message: "指定的知识库不存在" },
+          { status: 400 }
+        );
+      }
+
+      if (kb.ownerId !== currentUserId) {
+        return NextResponse.json(
+          { message: "您没有权限向此知识库添加文档" },
+          { status: 403 }
+        );
+      }
+    }
+
+    const document = await prisma.$transaction(async (tx) => {
+      const newDocument = await tx.document.create({
+        data: {
+          title,
+          content: extractedContent || null,
+          fileUrl: `/uploads/${uniqueFileName}`,
+          fileType: fileExtension.substring(1).toUpperCase(),
+          fileSize: BigInt(file.size),
+          status: DOCUMENT_STATUS.DRAFT,
+          authorId: currentUserId,
+          knowledgeBaseId: knowledgeBaseId || null,
+        },
+      });
+
+      if (textChunks.length > 0) {
+        const chunkData = textChunks.map((chunk, index) => ({
+          documentId: newDocument.id,
+          index,
+          content: chunk,
+        }));
+
+        try {
+          await tx.documentChunk.createMany({
+            data: chunkData,
+            skipDuplicates: true,
+          });
+          console.log(`[RAG 存储] 文档 "${title}" 成功存储 ${chunkData.length} 个片段`);
+        } catch (chunkError) {
+          console.error(`[RAG 存储] 文档片段存储失败:`, chunkError);
+          throw chunkError;
+        }
+      }
+
+      return newDocument;
     });
 
     return NextResponse.json(
@@ -175,6 +219,7 @@ export async function POST(request: NextRequest) {
         document: {
           ...document,
           fileSize: document.fileSize?.toString() || null,
+          chunkCount: textChunks.length,
         },
       },
       { status: 201 }

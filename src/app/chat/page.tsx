@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface KnowledgeBase {
   id: string;
@@ -35,19 +35,9 @@ interface SSEEvent {
   data: unknown;
 }
 
-function parseSSEData(line: string): unknown | null {
-  if (line.startsWith("data: ")) {
-    try {
-      return JSON.parse(line.slice(6));
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 export default function ChatPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -58,6 +48,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSources, setShowSources] = useState<string | null>(null);
+  const [initialKbLoaded, setInitialKbLoaded] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -73,7 +64,18 @@ export default function ChatPage() {
         const response = await fetch("/api/kb");
         if (response.ok) {
           const data = await response.json();
-          setKnowledgeBases(data.knowledgeBases || []);
+          const kbs = data.knowledgeBases || [];
+          setKnowledgeBases(kbs);
+
+          const kbFromUrl = searchParams.get("kb");
+          if (kbFromUrl && !initialKbLoaded) {
+            const validKb = kbs.find((kb: KnowledgeBase) => kb.id === kbFromUrl);
+            if (validKb) {
+              setSelectedKbId(kbFromUrl);
+              console.log(`[Chat] 自动选中知识库: ${validKb.name}`);
+            }
+            setInitialKbLoaded(true);
+          }
         }
       } catch (err) {
         console.error("获取知识库列表失败:", err);
@@ -81,7 +83,7 @@ export default function ChatPage() {
     };
 
     fetchKnowledgeBases();
-  }, []);
+  }, [searchParams, initialKbLoaded]);
 
   const generateMessageId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -139,6 +141,7 @@ export default function ChatPage() {
       let currentContent = "";
       let currentSources: ChatSource[] = [];
       let buffer = "";
+      let currentEvent = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -153,49 +156,70 @@ export default function ChatPage() {
 
         for (const line of lines) {
           if (line.startsWith("event: ")) {
-            const eventType = line.slice(7);
+            currentEvent = line.slice(7);
             continue;
           }
 
-          const data = parseSSEData(line);
-          if (!data) continue;
+          if (line.startsWith("data: ")) {
+            try {
+              const dataStr = line.slice(6);
+              const dataObj = JSON.parse(dataStr) as Record<string, unknown>;
 
-          const dataObj = data as Record<string, unknown>;
+              switch (currentEvent) {
+                case "sources":
+                  if (dataObj.sources && Array.isArray(dataObj.sources)) {
+                    currentSources = dataObj.sources as ChatSource[];
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? { ...msg, sources: currentSources }
+                          : msg
+                      )
+                    );
+                  }
+                  break;
 
-          if (dataObj.sources && Array.isArray(dataObj.sources)) {
-            currentSources = dataObj.sources as ChatSource[];
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, sources: currentSources }
-                  : msg
-              )
-            );
+                case "content":
+                  if (typeof dataObj.content === "string") {
+                    currentContent += dataObj.content;
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessageId
+                          ? { ...msg, content: currentContent }
+                          : msg
+                      )
+                    );
+                  }
+                  break;
+
+                case "done":
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessageId
+                        ? { ...msg, isStreaming: false }
+                        : msg
+                    )
+                  );
+                  break;
+
+                case "error":
+                  if (typeof dataObj.message === "string") {
+                    throw new Error(dataObj.message);
+                  }
+                  break;
+              }
+            } catch (parseError) {
+              if (parseError instanceof Error) {
+                throw parseError;
+              }
+              console.warn("SSE 数据解析失败:", line);
+            }
+            continue;
           }
 
-          if (typeof dataObj.content === "string") {
-            currentContent += dataObj.content;
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: currentContent }
-                  : msg
-              )
-            );
-          }
-
-          if (dataObj.totalTime !== undefined) {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, isStreaming: false }
-                  : msg
-              )
-            );
-          }
-
-          if (dataObj.message && typeof dataObj.message === "string") {
-            throw new Error(dataObj.message);
+          if (line === "") {
+            currentEvent = "";
+            continue;
           }
         }
       }

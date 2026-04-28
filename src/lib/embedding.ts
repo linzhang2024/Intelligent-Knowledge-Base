@@ -1,4 +1,4 @@
-import { DashScopeEmbeddings } from "@langchain/community/embeddings/dashscope";
+import { AlibabaTongyiEmbeddings } from "@langchain/community/embeddings/alibaba_tongyi";
 
 const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-v2";
@@ -13,14 +13,14 @@ export function isEmbeddingConfigured(): boolean {
   return !!DASHSCOPE_API_KEY && DASHSCOPE_API_KEY.trim().length > 0;
 }
 
-function getEmbeddings(): DashScopeEmbeddings {
+function getEmbeddings(): AlibabaTongyiEmbeddings {
   if (!DASHSCOPE_API_KEY) {
     throw new Error("DASHSCOPE_API_KEY 未配置，请在环境变量中设置");
   }
 
-  return new DashScopeEmbeddings({
-    model: process.env.EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL,
-    apiKey: DASHSCOPE_API_KEY,
+  return new AlibabaTongyiEmbeddings({
+    modelName: process.env.EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL,
+    alibabaApiKey: DASHSCOPE_API_KEY,
   });
 }
 

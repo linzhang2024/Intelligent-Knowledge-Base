@@ -44,7 +44,7 @@ function getChatModel(options: ChatOptions = {}): ChatAlibabaTongyi {
 
   return new ChatAlibabaTongyi({
     model: options.model || process.env.LLM_MODEL || DEFAULT_LLM_MODEL,
-    apiKey: DASHSCOPE_API_KEY,
+    alibabaApiKey: DASHSCOPE_API_KEY,
     temperature: options.temperature ?? 0.7,
     streaming: options.streaming ?? false,
   });

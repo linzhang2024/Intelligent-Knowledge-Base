@@ -133,6 +133,12 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900">智能知识库</h1>
           <div className="flex items-center space-x-4">
             <Link
+              href="/chat"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+            >
+              💬 智能问答
+            </Link>
+            <Link
               href="/documents/upload"
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
             >
@@ -186,6 +192,22 @@ export default function DashboardPage() {
                     </div>
                     <p className="mt-2 text-sm text-gray-500">{kb.description || "暂无描述"}</p>
                     <div className="mt-4 flex space-x-2">
+                      <Link
+                        href={`/chat?kb=${encodeURIComponent(kb.id)}`}
+                        className={`inline-flex items-center justify-center px-3 py-2 border text-sm font-medium rounded-md transition-colors ${
+                          kb.documentCount > 0
+                            ? "bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                            : "bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed"
+                        }`}
+                        onClick={(e) => {
+                          if (kb.documentCount === 0) {
+                            e.preventDefault();
+                          }
+                        }}
+                        title={kb.documentCount === 0 ? "该知识库没有文档" : "向此知识库提问"}
+                      >
+                        💬 提问
+                      </Link>
                       <button
                         onClick={() => handleExport(kb.id, kb.name)}
                         disabled={exportingId === kb.id}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { semanticSearch, SearchResult } from "@/lib/vectorStore";
+import { semanticSearch, SearchResult, EmbeddingTimeoutError, EmptyVectorStoreError } from "@/lib/vectorStore";
 import { isEmbeddingConfigured } from "@/lib/embedding";
 
 export interface SearchRequest {
@@ -65,15 +65,35 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error) {
       if (error.message === "未授权访问") {
         return NextResponse.json(
-          { message: "未登录，请先登录" },
+          { message: "未登录，请先登录", errorType: "UNAUTHORIZED" },
           { status: 401 }
         );
       }
       if (error.message === "账号待审核，请联系管理员" || 
           error.message === "账号已被禁用，请联系管理员") {
         return NextResponse.json(
-          { message: error.message },
+          { message: error.message, errorType: "FORBIDDEN" },
           { status: 403 }
+        );
+      }
+      if (error instanceof EmptyVectorStoreError) {
+        return NextResponse.json(
+          { 
+            message: error.message, 
+            errorType: "EMPTY_VECTOR_STORE",
+            results: [],
+            totalMatched: 0
+          },
+          { status: 200 }
+        );
+      }
+      if (error instanceof EmbeddingTimeoutError) {
+        return NextResponse.json(
+          { 
+            message: error.message, 
+            errorType: "EMBEDDING_TIMEOUT"
+          },
+          { status: 504 }
         );
       }
     }
@@ -82,7 +102,10 @@ export async function POST(request: NextRequest) {
     const errorMessage = error instanceof Error ? error.message : "未知错误";
 
     return NextResponse.json(
-      { message: `搜索失败: ${errorMessage}` },
+      { 
+        message: `搜索失败: ${errorMessage}`,
+        errorType: "INTERNAL_ERROR"
+      },
       { status: 500 }
     );
   }
@@ -144,15 +167,35 @@ export async function GET(request: NextRequest) {
     if (error instanceof Error) {
       if (error.message === "未授权访问") {
         return NextResponse.json(
-          { message: "未登录，请先登录" },
+          { message: "未登录，请先登录", errorType: "UNAUTHORIZED" },
           { status: 401 }
         );
       }
       if (error.message === "账号待审核，请联系管理员" || 
           error.message === "账号已被禁用，请联系管理员") {
         return NextResponse.json(
-          { message: error.message },
+          { message: error.message, errorType: "FORBIDDEN" },
           { status: 403 }
+        );
+      }
+      if (error instanceof EmptyVectorStoreError) {
+        return NextResponse.json(
+          { 
+            message: error.message, 
+            errorType: "EMPTY_VECTOR_STORE",
+            results: [],
+            totalMatched: 0
+          },
+          { status: 200 }
+        );
+      }
+      if (error instanceof EmbeddingTimeoutError) {
+        return NextResponse.json(
+          { 
+            message: error.message, 
+            errorType: "EMBEDDING_TIMEOUT"
+          },
+          { status: 504 }
         );
       }
     }
@@ -161,7 +204,10 @@ export async function GET(request: NextRequest) {
     const errorMessage = error instanceof Error ? error.message : "未知错误";
 
     return NextResponse.json(
-      { message: `搜索失败: ${errorMessage}` },
+      { 
+        message: `搜索失败: ${errorMessage}`,
+        errorType: "INTERNAL_ERROR"
+      },
       { status: 500 }
     );
   }

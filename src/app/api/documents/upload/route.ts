@@ -5,6 +5,7 @@ import path from "path";
 import prisma from "@/lib/prisma";
 import { formatFileSize } from "@/lib/format";
 import { requireAuth, getCurrentUserId } from "@/lib/auth";
+import { embedDocuments, isEmbeddingConfigured, serializeVector } from "@/lib/embedding";
 
 const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
@@ -370,6 +371,49 @@ export async function POST(request: NextRequest) {
       return newDocument;
     });
 
+    let embeddingSuccess = false;
+    let embeddingError: string | null = null;
+
+    if (textChunks.length > 0 && isEmbeddingConfigured()) {
+      try {
+        console.log(`[RAG Embedding] 开始向量化文档 "${title}" 的 ${textChunks.length} 个片段`);
+        
+        const embeddingResult = await embedDocuments(textChunks);
+        console.log(`[RAG Embedding] 向量化完成，模型: ${embeddingResult.model}, 维度: ${embeddingResult.dimensions}`);
+        
+        const chunks = await prisma.documentChunk.findMany({
+          where: { documentId: document.id },
+          orderBy: { index: "asc" },
+        });
+
+        for (let i = 0; i < chunks.length && i < embeddingResult.vectors.length; i++) {
+          await prisma.documentChunk.update({
+            where: { id: chunks[i].id },
+            data: {
+              embedding: serializeVector(embeddingResult.vectors[i]),
+              embeddingModel: embeddingResult.model,
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        embeddingSuccess = true;
+        console.log(`[RAG Embedding] 文档 "${title}" 向量化存储完成`);
+      } catch (error) {
+        embeddingError = error instanceof Error ? error.message : "未知错误";
+        console.error(`[RAG Embedding] 向量化失败:`, error);
+      }
+    } else if (!isEmbeddingConfigured() && textChunks.length > 0) {
+      console.log(`[RAG Embedding] Embedding 服务未配置，跳过向量化`);
+    }
+
+    const ragInfo = {
+      chunkCount: textChunks.length,
+      embeddingConfigured: isEmbeddingConfigured(),
+      embeddingSuccess,
+      embeddingError,
+    };
+
     if (parseError) {
       return NextResponse.json(
         {
@@ -379,8 +423,8 @@ export async function POST(request: NextRequest) {
           document: {
             ...document,
             fileSize: document.fileSize?.toString() || null,
-            chunkCount: textChunks.length,
           },
+          rag: ragInfo,
         },
         { status: 201 }
       );
@@ -392,8 +436,8 @@ export async function POST(request: NextRequest) {
         document: {
           ...document,
           fileSize: document.fileSize?.toString() || null,
-          chunkCount: textChunks.length,
         },
+        rag: ragInfo,
       },
       { status: 201 }
     );

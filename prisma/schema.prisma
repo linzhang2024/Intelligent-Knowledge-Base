@@ -68,6 +68,8 @@ model DocumentChunk {
   index           Int
   content         String
   vectorId        String?
+  embedding       String?
+  embeddingModel  String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 

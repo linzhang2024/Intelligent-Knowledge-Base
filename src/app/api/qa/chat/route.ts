@@ -79,14 +79,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isEmbeddingConfigured()) {
+    const [embeddingConfigured, llmConfigured] = await Promise.all([
+      isEmbeddingConfigured(),
+      isLLMConfigured(),
+    ]);
+
+    if (!embeddingConfigured) {
       return NextResponse.json(
         { message: "Embedding 服务未配置，无法进行语义检索", errorType: "SERVICE_UNAVAILABLE" },
         { status: 503 }
       );
     }
 
-    if (!isLLMConfigured()) {
+    if (!llmConfigured) {
       return NextResponse.json(
         { message: "LLM 服务未配置，无法进行对话", errorType: "SERVICE_UNAVAILABLE" },
         { status: 503 }

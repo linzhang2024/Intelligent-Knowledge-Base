@@ -15,6 +15,143 @@ import { getEmbeddingsInstance } from "@/lib/embedding";
 import { getChatModelInstance } from "@/lib/llm";
 import { HumanMessage } from "@langchain/core/messages";
 
+interface TestResult {
+  success: boolean;
+  message: string;
+  errorType?: string;
+  suggestion?: string;
+  latency?: number;
+}
+
+function analyzeError(error: unknown, type: "embedding" | "llm"): TestResult {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorStack = error instanceof Error ? error.stack : undefined;
+
+  const lowerMessage = errorMessage.toLowerCase();
+  const lowerStack = errorStack?.toLowerCase() || "";
+
+  if (lowerMessage.includes("401") || 
+      lowerStack.includes("401") ||
+      lowerMessage.includes("unauthorized") ||
+      lowerMessage.includes("invalid api key") ||
+      lowerMessage.includes("api key not found") ||
+      lowerMessage.includes("incorrect api key")) {
+    return {
+      success: false,
+      message: `API Key 无效或已过期 (401 Unauthorized)`,
+      errorType: "AUTHENTICATION_ERROR",
+      suggestion: "请检查您的 API Key 是否正确，或在提供商控制台重新生成新的 API Key。",
+    };
+  }
+
+  if (lowerMessage.includes("403") ||
+      lowerStack.includes("403") ||
+      lowerMessage.includes("forbidden") ||
+      lowerMessage.includes("access denied") ||
+      lowerMessage.includes("insufficient quota")) {
+    return {
+      success: false,
+      message: `API 访问被拒绝 (403 Forbidden)`,
+      errorType: "FORBIDDEN_ERROR",
+      suggestion: "请检查您的账户是否有足够的配额，或是否已开通该模型的访问权限。部分模型需要单独申请或付费。",
+    };
+  }
+
+  if (lowerMessage.includes("404") ||
+      lowerStack.includes("404") ||
+      lowerMessage.includes("not found") ||
+      lowerMessage.includes("model not found")) {
+    return {
+      success: false,
+      message: `模型不存在或 API 路径错误 (404 Not Found)`,
+      errorType: "NOT_FOUND_ERROR",
+      suggestion: `请检查：1) 模型名称是否正确；2) Base URL 是否正确。当前模型为 "${type === 'embedding' ? 'Embedding' : 'LLM'}" 模型，确保您选择的模型属于正确的类型。`,
+    };
+  }
+
+  if (lowerMessage.includes("429") ||
+      lowerStack.includes("429") ||
+      lowerMessage.includes("rate limit") ||
+      lowerMessage.includes("too many requests")) {
+    return {
+      success: false,
+      message: `请求频率超限 (429 Too Many Requests)`,
+      errorType: "RATE_LIMIT_ERROR",
+      suggestion: "API 请求过于频繁，请稍后重试。如果频繁出现此问题，可能需要检查账户配额或升级套餐。",
+    };
+  }
+
+  if (lowerMessage.includes("500") ||
+      lowerStack.includes("500") ||
+      lowerMessage.includes("502") ||
+      lowerStack.includes("502") ||
+      lowerMessage.includes("503") ||
+      lowerStack.includes("503") ||
+      lowerMessage.includes("server error") ||
+      lowerMessage.includes("service unavailable")) {
+    return {
+      success: false,
+      message: `提供商服务器错误 (5xx Server Error)`,
+      errorType: "SERVER_ERROR",
+      suggestion: "这是 API 提供商的服务端问题，请稍后重试。您也可以检查提供商的状态页面确认服务是否正常。",
+    };
+  }
+
+  if (lowerMessage.includes("timeout") ||
+      lowerMessage.includes("timed out") ||
+      lowerMessage.includes("etimedout") ||
+      lowerMessage.includes("econnaborted")) {
+    return {
+      success: false,
+      message: `连接超时`,
+      errorType: "TIMEOUT_ERROR",
+      suggestion: "请检查网络连接是否正常，或 Base URL 是否正确。如果使用代理或内网环境，请确保网络可达。",
+    };
+  }
+
+  if (lowerMessage.includes("econnrefused") ||
+      lowerMessage.includes("enotfound") ||
+      lowerMessage.includes("getaddrinfo") ||
+      lowerMessage.includes("dns")) {
+    return {
+      success: false,
+      message: `无法连接到 API 服务器`,
+      errorType: "CONNECTION_ERROR",
+      suggestion: "请检查 Base URL 是否正确，以及网络连接是否正常。如果是自定义域名，请确保 DNS 解析正确。",
+    };
+  }
+
+  if (lowerMessage.includes("quota") ||
+      lowerMessage.includes("balance") ||
+      lowerMessage.includes("insufficient funds") ||
+      lowerMessage.includes("out of credit")) {
+    return {
+      success: false,
+      message: `账户余额不足或配额耗尽`,
+      errorType: "QUOTA_ERROR",
+      suggestion: "请检查您的 API 账户余额或配额是否充足，需要充值或升级套餐后才能继续使用。",
+    };
+  }
+
+  if (lowerMessage.includes("context length") ||
+      lowerMessage.includes("maximum context") ||
+      lowerMessage.includes("prompt is too long")) {
+    return {
+      success: false,
+      message: `模型上下文长度超限`,
+      errorType: "CONTEXT_LENGTH_ERROR",
+      suggestion: "这通常不是配置问题，而是输入内容过长。请检查您的输入文本长度是否超出模型的最大上下文限制。",
+    };
+  }
+
+  return {
+    success: false,
+    message: `连接失败: ${errorMessage}`,
+    errorType: "UNKNOWN_ERROR",
+    suggestion: "这是一个未知错误。请检查：1) API Key 是否正确；2) Base URL 是否正确；3) 网络连接是否正常。如果问题持续，请联系技术支持。",
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin(request);
@@ -189,11 +326,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let testResult: { success: boolean; message: string; latency?: number };
+    let testResult: TestResult;
 
     const startTime = Date.now();
 
     try {
+      console.log(`[AI Config Test] 开始测试 ${type === "embedding" ? "Embedding" : "LLM"} 连接`);
+      console.log(`[AI Config Test] 提供商: ${actualProvider}, 模型: ${actualModel}, Base URL: ${actualBaseUrl}`);
+
       if (type === "embedding") {
         const embeddings = getEmbeddingsInstance(
           actualProvider,
@@ -208,7 +348,7 @@ export async function POST(request: NextRequest) {
 
         testResult = {
           success: true,
-          message: `Embedding 连接测试成功，模型: ${actualModel}`,
+          message: `✅ Embedding 向量化服务连接测试成功！模型: ${actualModel}`,
           latency,
         };
       } else {
@@ -229,21 +369,16 @@ export async function POST(request: NextRequest) {
 
         testResult = {
           success: true,
-          message: `LLM 连接测试成功，模型: ${actualModel}`,
+          message: `✅ LLM 对话模型连接测试成功！模型: ${actualModel}`,
           latency,
         };
       }
+
+      console.log(`[AI Config Test] 测试成功，耗时: ${testResult.latency}ms`);
     } catch (apiError) {
-      console.error("API 连接测试失败:", apiError);
+      console.error("[AI Config Test] API 连接测试失败:", apiError);
 
-      const errorMessage = apiError instanceof Error
-        ? apiError.message
-        : "未知错误";
-
-      testResult = {
-        success: false,
-        message: `连接失败: ${errorMessage}`,
-      };
+      testResult = analyzeError(apiError, type);
     }
 
     return NextResponse.json(testResult, { status: 200 });

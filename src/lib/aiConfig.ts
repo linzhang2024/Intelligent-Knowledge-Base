@@ -11,14 +11,14 @@ export type AIProvider = typeof AI_PROVIDERS[keyof typeof AI_PROVIDERS];
 
 export const EMBEDDING_MODELS: Record<AIProvider, string[]> = {
   [AI_PROVIDERS.OPENAI]: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
-  [AI_PROVIDERS.DEEPSEEK]: ["deepseek-chat"],
+  [AI_PROVIDERS.DEEPSEEK]: ["deepseek-embed"],
   [AI_PROVIDERS.DASHSCOPE]: ["text-embedding-v1", "text-embedding-v2", "text-embedding-v3"],
 };
 
 export const LLM_MODELS: Record<AIProvider, string[]> = {
-  [AI_PROVIDERS.OPENAI]: ["gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini"],
-  [AI_PROVIDERS.DEEPSEEK]: ["deepseek-chat", "deepseek-coder"],
-  [AI_PROVIDERS.DASHSCOPE]: ["qwen-turbo", "qwen-plus", "qwen-max", "qwen-7b-chat", "qwen-14b-chat"],
+  [AI_PROVIDERS.OPENAI]: ["gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+  [AI_PROVIDERS.DEEPSEEK]: ["deepseek-chat", "deepseek-reasoner", "deepseek-coder", "deepseek-v4-pro", "deepseek-v4-flash"],
+  [AI_PROVIDERS.DASHSCOPE]: ["qwen-turbo", "qwen-plus", "qwen-max", "qwen-7b-chat", "qwen-14b-chat", "qwen2.5-72b-instruct"],
 };
 
 export const PROVIDER_BASE_URLS: Record<AIProvider, string> = {

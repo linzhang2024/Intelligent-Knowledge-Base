@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: SearchRequest = await request.json();
-    const { query, knowledgeBaseId, limit = 5, minSimilarity = 0.5 } = body;
+    const { query, knowledgeBaseId, limit = 5, minSimilarity = 0.38 } = body;
 
     if (!query || query.trim() === "") {
       return NextResponse.json(
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
     const limit = limitParam ? Math.min(parseInt(limitParam, 10), 10) : 5;
     const minSimilarity = minSimilarityParam
       ? Math.max(parseFloat(minSimilarityParam), 0.1)
-      : 0.5;
+      : 0.38;
 
     const startTime = Date.now();
 

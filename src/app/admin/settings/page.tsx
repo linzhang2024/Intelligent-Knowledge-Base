@@ -60,6 +60,8 @@ export default function SettingsPage() {
     type: "embedding" | "llm";
     success: boolean;
     message: string;
+    errorType?: string;
+    suggestion?: string;
     latency?: number;
   } | null>(null);
 
@@ -248,6 +250,8 @@ export default function SettingsPage() {
         type,
         success: result.success,
         message: result.message,
+        errorType: result.errorType,
+        suggestion: result.suggestion,
         latency: result.latency,
       });
     } catch (error) {
@@ -353,19 +357,53 @@ export default function SettingsPage() {
           <div
             className={`mb-6 p-4 rounded-md ${
               testResult.success
-                ? "bg-green-50 text-green-800 border border-green-200"
-                : "bg-red-50 text-red-800 border border-red-200"
+                ? "bg-green-50 border border-green-200"
+                : "bg-red-50 border border-red-200"
             }`}
           >
-            <div className="flex items-center justify-between">
-              <span>
-                {testResult.type === "embedding" ? "Embedding" : "LLM"}{" "}
-                测试: {testResult.message}
-                {testResult.latency && ` (耗时: ${testResult.latency}ms)`}
-              </span>
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div
+                  className={`font-medium ${
+                    testResult.success ? "text-green-800" : "text-red-800"
+                  }`}
+                >
+                  {testResult.type === "embedding" ? "🔍 Embedding 向量化服务" : "🤖 LLM 对话模型"}{" "}
+                  测试结果
+                </div>
+                <div
+                  className={`mt-1 ${
+                    testResult.success ? "text-green-700" : "text-red-700"
+                  }`}
+                >
+                  {testResult.message}
+                  {testResult.latency && (
+                    <span className="ml-2 text-sm opacity-75">
+                      (响应时间: {testResult.latency}ms)
+                    </span>
+                  )}
+                </div>
+
+                {!testResult.success && testResult.errorType && (
+                  <div className="mt-2 text-sm text-red-600">
+                    <span className="font-medium">错误类型:</span> {testResult.errorType}
+                  </div>
+                )}
+
+                {!testResult.success && testResult.suggestion && (
+                  <div className="mt-3 p-3 bg-white rounded border border-red-100">
+                    <div className="flex items-start">
+                      <span className="text-amber-500 mr-2">💡</span>
+                      <div className="text-sm text-gray-700">
+                        <span className="font-medium">操作建议:</span> {testResult.suggestion}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={() => setTestResult(null)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-400 hover:text-gray-600 ml-4"
               >
                 ×
               </button>

@@ -90,6 +90,8 @@ function PreviewModal({
 }: PreviewModalState & {
   onClose: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"content" | "chunks">("content");
+
   if (!isOpen) return null;
 
   return (
@@ -129,7 +131,7 @@ function PreviewModal({
                   <path
                     className="opacity-75"
                     fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 0 014 12H0c0 3.042 3 7.938l3-2.647z"
                   ></path>
                 </svg>
               </div>
@@ -172,60 +174,116 @@ function PreviewModal({
                 </div>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-700">提取的文本内容</p>
-                  {document.content && (
-                    <span className="text-xs text-gray-500">
-                      共 {document.content.length} 字符
-                    </span>
-                  )}
+              <div className="border-b border-gray-200 mb-4">
+                <nav className="flex space-x-8">
+                  <button
+                    onClick={() => setActiveTab("content")}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === "content"
+                        ? "border-indigo-500 text-indigo-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    文档内容
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("chunks")}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === "chunks"
+                        ? "border-indigo-500 text-indigo-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    数据切片 ({document.chunks?.length || 0})
+                  </button>
+                </nav>
+              </div>
+
+              {activeTab === "content" && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-gray-700">提取的文本内容</p>
+                    {document.content && (
+                      <span className="text-xs text-gray-500">
+                        共 {document.content.length} 字符
+                      </span>
+                    )}
+                  </div>
+                  <div className="max-h-96 overflow-y-auto bg-gray-50 rounded-md p-4">
+                    {document.content && document.content.trim() ? (
+                      <pre className="text-sm text-gray-900 whitespace-pre-wrap font-sans leading-relaxed">
+                        {document.content}
+                      </pre>
+                    ) : (
+                      <div className="text-center py-8">
+                        <div className="text-4xl mb-3">📄</div>
+                        <p className="text-sm text-gray-600 font-medium">内容解析中或解析失败</p>
+                        <p className="text-xs text-gray-400 mt-2">
+                          可能原因：PDF 加密、扫描版 PDF、文本提取错误
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="max-h-96 overflow-y-auto bg-gray-50 rounded-md p-4">
-                  {document.content && document.content.trim() ? (
-                    <pre className="text-sm text-gray-900 whitespace-pre-wrap font-sans leading-relaxed">
-                      {document.content}
-                    </pre>
+              )}
+
+              {activeTab === "chunks" && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-medium text-gray-700">
+                      数据切片列表
+                    </p>
+                    <span className="text-xs text-gray-500">
+                      共 {document.chunks?.length || 0} 个片段
+                    </span>
+                  </div>
+                  {document.chunks && document.chunks.length > 0 ? (
+                    <div className="max-h-96 overflow-y-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                              索引
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              切片内容摘要（前 100 字）
+                            </th>
+                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                              字符长度
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {document.chunks.map((chunk) => (
+                            <tr key={chunk.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                                  #{chunk.index + 1}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <p className="text-sm text-gray-700 line-clamp-2">
+                                  {chunk.content.substring(0, 100)}
+                                  {chunk.content.length > 100 ? "..." : ""}
+                                </p>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 text-right">
+                                {chunk.content.length} 字
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
-                    <div className="text-center py-8">
+                    <div className="text-center py-8 bg-gray-50 rounded-md">
                       <div className="text-4xl mb-3">📄</div>
-                      <p className="text-sm text-gray-600 font-medium">内容解析中或解析失败</p>
+                      <p className="text-sm text-gray-600 font-medium">该文档暂无数据切片</p>
                       <p className="text-xs text-gray-400 mt-2">
-                        可能原因：PDF 加密、扫描版 PDF、文本提取错误
+                        将文档添加到知识库后，系统会自动进行 RAG 预处理
                       </p>
                     </div>
                   )}
-                </div>
-              </div>
-
-              {document.chunks && document.chunks.length > 0 && (
-                <div className="mt-6">
-                  <p className="text-sm font-medium text-gray-700 mb-2">
-                    向量切片预览（共 {document.chunks.length} 个片段）
-                  </p>
-                  <div className="space-y-3 max-h-64 overflow-y-auto">
-                    {document.chunks.slice(0, 5).map((chunk) => (
-                      <div key={chunk.id} className="bg-blue-50 border border-blue-100 rounded-md p-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium text-blue-600">
-                            片段 #{chunk.index + 1}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {chunk.content.length} 字符
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-700 line-clamp-3">
-                          {chunk.content.substring(0, 200)}
-                          {chunk.content.length > 200 ? "..." : ""}
-                        </p>
-                      </div>
-                    ))}
-                    {document.chunks.length > 5 && (
-                      <p className="text-xs text-gray-500 text-center">
-                        ... 还有 {document.chunks.length - 5} 个片段
-                      </p>
-                    )}
-                  </div>
                 </div>
               )}
             </>
@@ -641,7 +699,7 @@ export default function DocumentsPage() {
                   <path
                     className="opacity-75"
                     fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 0 014 12H0c0 3.042 3 7.938l3-2.647z"
                   ></path>
                 </svg>
               </div>

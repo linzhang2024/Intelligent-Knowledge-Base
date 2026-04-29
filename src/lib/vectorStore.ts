@@ -63,7 +63,7 @@ export async function semanticSearch(
   const {
     knowledgeBaseId,
     limit = 5,
-    minSimilarity = 0.5,
+    minSimilarity = 0.38,
     userId,
   } = options;
 
@@ -187,12 +187,21 @@ export async function semanticSearch(
     throw new Error(`相似度计算失败: ${error instanceof Error ? error.message : '未知错误'}`);
   }
 
+  console.log(`[VectorSearch] 各切片原始相似度得分（按相似度排序）：`);
+  sortedResults.forEach((result, index) => {
+    const simPercent = (result.similarity * 100).toFixed(2);
+    const isFiltered = result.similarity < minSimilarity;
+    console.log(
+      `[VectorSearch]   #${index + 1}: 文档="${result.item.document.title}", 片段#${result.item.index + 1}, 相似度=${simPercent}%${isFiltered ? " [已过滤]" : ""}`
+    );
+  });
+
   const filteredResults = sortedResults.filter(
     (result) => result.similarity >= minSimilarity
   );
 
   console.log(
-    `[VectorSearch] 过滤后剩余 ${filteredResults.length} 个结果（相似度 >= ${minSimilarity}）`
+    `[VectorSearch] 过滤后剩余 ${filteredResults.length} 个结果（相似度 >= ${(minSimilarity * 100).toFixed(1)}%）`
   );
 
   const topResults = filteredResults.slice(0, limit);

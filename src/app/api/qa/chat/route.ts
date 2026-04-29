@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       message,
       knowledgeBaseId,
       limit = 5,
-      minSimilarity = 0.5,
+      minSimilarity = 0.38,
       streaming = true,
       history = [],
     } = body;

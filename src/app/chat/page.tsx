@@ -122,7 +122,7 @@ export default function ChatPage() {
           knowledgeBaseId: selectedKbId || undefined,
           streaming: true,
           limit: 5,
-          minSimilarity: 0.5,
+          minSimilarity: 0.38,
         }),
       });
 

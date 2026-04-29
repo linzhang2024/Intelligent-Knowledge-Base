@@ -1,9 +1,8 @@
 import { ChatAlibabaTongyi } from "@langchain/community/chat_models/alibaba_tongyi";
+import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
 import { SearchResult } from "@/lib/vectorStore";
-
-const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
-const DEFAULT_LLM_MODEL = "qwen-plus";
+import { getAIConfig, AI_PROVIDERS, AIProvider } from "@/lib/aiConfig";
 
 const SYSTEM_PROMPT_TEMPLATE = `你是一个专业的知识库助手。请基于以下提供的上下文信息来回答用户的问题。
 
@@ -33,21 +32,64 @@ export interface ChatOptions {
   streaming?: boolean;
 }
 
-export function isLLMConfigured(): boolean {
-  return !!DASHSCOPE_API_KEY && DASHSCOPE_API_KEY.trim().length > 0;
+function getChatModelInstance(
+  provider: AIProvider,
+  apiKey: string,
+  baseUrl: string,
+  options: ChatOptions = {}
+) {
+  const model = options.model;
+  const temperature = options.temperature ?? 0.7;
+  const streaming = options.streaming ?? false;
+
+  switch (provider) {
+    case AI_PROVIDERS.OPENAI:
+    case AI_PROVIDERS.DEEPSEEK:
+      return new ChatOpenAI({
+        model,
+        apiKey,
+        temperature,
+        streaming,
+        configuration: {
+          baseURL: baseUrl,
+        },
+      });
+
+    case AI_PROVIDERS.DASHSCOPE:
+      return new ChatAlibabaTongyi({
+        model,
+        apiKey,
+        temperature,
+        streaming,
+      } as any);
+
+    default:
+      throw new Error(`不支持的 LLM 提供商: ${provider}`);
+  }
 }
 
-function getChatModel(options: ChatOptions = {}): ChatAlibabaTongyi {
-  if (!DASHSCOPE_API_KEY) {
-    throw new Error("DASHSCOPE_API_KEY 未配置，无法使用 LLM 服务");
+export async function isLLMConfigured(): Promise<boolean> {
+  const config = await getAIConfig();
+  return !!config.llm.apiKey && config.llm.apiKey.trim().length > 0;
+}
+
+async function getChatModel(options: ChatOptions = {}) {
+  const config = await getAIConfig();
+
+  if (!config.llm.apiKey) {
+    throw new Error("LLM API Key 未配置，请在系统设置中配置");
   }
 
-  return new ChatAlibabaTongyi({
-    model: options.model || process.env.LLM_MODEL || DEFAULT_LLM_MODEL,
-    alibabaApiKey: DASHSCOPE_API_KEY,
-    temperature: options.temperature ?? 0.7,
-    streaming: options.streaming ?? false,
-  });
+  return getChatModelInstance(
+    config.llm.provider,
+    config.llm.apiKey,
+    config.llm.baseUrl,
+    {
+      ...options,
+      model: options.model || config.llm.model,
+      temperature: options.temperature ?? config.llm.temperature,
+    }
+  );
 }
 
 function buildContext(searchResults: SearchResult[]): string {
@@ -102,10 +144,11 @@ export async function chatWithRAG(
   history: ChatMessage[] = []
 ): Promise<string> {
   const messages = buildRAGPrompt(userQuery, searchResults, history);
-  const model = getChatModel({ ...options, streaming: false });
+  const model = await getChatModel({ ...options, streaming: false });
 
+  const config = await getAIConfig();
   console.log(`[LLM] 开始 RAG 聊天，查询: "${userQuery}"`);
-  console.log(`[LLM] 上下文片段数量: ${searchResults.length}`);
+  console.log(`[LLM] 上下文片段数量: ${searchResults.length}, 提供商: ${config.llm.provider}, 模型: ${config.llm.model}`);
 
   const response = await model.invoke(messages);
 
@@ -121,10 +164,11 @@ export async function chatWithRAGStream(
   history: ChatMessage[] = []
 ): Promise<AsyncIterable<string>> {
   const messages = buildRAGPrompt(userQuery, searchResults, history);
-  const model = getChatModel({ ...options, streaming: true });
+  const model = await getChatModel({ ...options, streaming: true });
 
+  const config = await getAIConfig();
   console.log(`[LLM] 开始流式 RAG 聊天，查询: "${userQuery}"`);
-  console.log(`[LLM] 上下文片段数量: ${searchResults.length}`);
+  console.log(`[LLM] 上下文片段数量: ${searchResults.length}, 提供商: ${config.llm.provider}, 模型: ${config.llm.model}`);
 
   const stream = await model.stream(messages);
 
@@ -138,4 +182,4 @@ export async function chatWithRAGStream(
   })();
 }
 
-export { buildContext, buildRAGPrompt };
+export { buildContext, buildRAGPrompt, getChatModelInstance };

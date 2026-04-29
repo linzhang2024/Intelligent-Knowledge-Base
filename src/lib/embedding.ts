@@ -1,7 +1,6 @@
 import { AlibabaTongyiEmbeddings } from "@langchain/community/embeddings/alibaba_tongyi";
-
-const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
-const DEFAULT_EMBEDDING_MODEL = "text-embedding-v2";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { getAIConfig, AI_PROVIDERS, AIProvider } from "@/lib/aiConfig";
 
 export interface EmbeddingResult {
   vectors: number[][];
@@ -9,30 +8,60 @@ export interface EmbeddingResult {
   dimensions: number;
 }
 
-export function isEmbeddingConfigured(): boolean {
-  return !!DASHSCOPE_API_KEY && DASHSCOPE_API_KEY.trim().length > 0;
+function getEmbeddingsInstance(provider: AIProvider, apiKey: string, baseUrl: string, model: string) {
+  switch (provider) {
+    case AI_PROVIDERS.OPENAI:
+    case AI_PROVIDERS.DEEPSEEK:
+      return new OpenAIEmbeddings({
+        model,
+        apiKey,
+        configuration: {
+          baseURL: baseUrl,
+        },
+      });
+
+    case AI_PROVIDERS.DASHSCOPE:
+      return new AlibabaTongyiEmbeddings({
+        modelName: model as any,
+        apiKey,
+      } as any);
+
+    default:
+      throw new Error(`不支持的 Embedding 提供商: ${provider}`);
+  }
 }
 
-function getEmbeddings(): AlibabaTongyiEmbeddings {
-  if (!DASHSCOPE_API_KEY) {
-    throw new Error("DASHSCOPE_API_KEY 未配置，请在环境变量中设置");
+export async function isEmbeddingConfigured(): Promise<boolean> {
+  const config = await getAIConfig();
+  return !!config.embedding.apiKey && config.embedding.apiKey.trim().length > 0;
+}
+
+async function getEmbeddings() {
+  const config = await getAIConfig();
+
+  if (!config.embedding.apiKey) {
+    throw new Error("Embedding API Key 未配置，请在系统设置中配置");
   }
 
-  return new AlibabaTongyiEmbeddings({
-    modelName: process.env.EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL,
-    alibabaApiKey: DASHSCOPE_API_KEY,
-  });
+  return getEmbeddingsInstance(
+    config.embedding.provider,
+    config.embedding.apiKey,
+    config.embedding.baseUrl,
+    config.embedding.model
+  );
 }
 
 export async function embedDocuments(texts: string[]): Promise<EmbeddingResult> {
-  if (!isEmbeddingConfigured()) {
+  const configured = await isEmbeddingConfigured();
+  if (!configured) {
     throw new Error("Embedding 服务未配置，无法进行向量化");
   }
 
-  const model = process.env.EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
-  const embeddings = getEmbeddings();
+  const config = await getAIConfig();
+  const embeddings = await getEmbeddings();
+  const model = config.embedding.model;
 
-  console.log(`[Embedding] 开始向量化 ${texts.length} 个文本片段，模型: ${model}`);
+  console.log(`[Embedding] 开始向量化 ${texts.length} 个文本片段，模型: ${model}, 提供商: ${config.embedding.provider}`);
 
   const vectors = await embeddings.embedDocuments(texts);
 
@@ -46,14 +75,16 @@ export async function embedDocuments(texts: string[]): Promise<EmbeddingResult> 
 }
 
 export async function embedQuery(text: string): Promise<EmbeddingResult> {
-  if (!isEmbeddingConfigured()) {
+  const configured = await isEmbeddingConfigured();
+  if (!configured) {
     throw new Error("Embedding 服务未配置，无法进行向量化");
   }
 
-  const model = process.env.EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL;
-  const embeddings = getEmbeddings();
+  const config = await getAIConfig();
+  const embeddings = await getEmbeddings();
+  const model = config.embedding.model;
 
-  console.log(`[Embedding] 开始向量化查询文本，模型: ${model}`);
+  console.log(`[Embedding] 开始向量化查询文本，模型: ${model}, 提供商: ${config.embedding.provider}`);
 
   const vector = await embeddings.embedQuery(text);
 
@@ -126,3 +157,5 @@ export function sortBySimilarity<T extends { embedding?: string | null }>(
 
   return results.sort((a, b) => b.similarity - a.similarity);
 }
+
+export { getEmbeddingsInstance };

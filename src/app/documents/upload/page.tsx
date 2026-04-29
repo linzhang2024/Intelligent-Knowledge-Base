@@ -215,7 +215,7 @@ export default function UploadPage() {
           fileType: data.document.fileType,
           fileSize: data.document.fileSize,
           totalWords: data.document.content?.length || 0,
-          chunkCount: data.document.chunkCount,
+          chunkCount: data.rag?.chunkCount || 0,
           warning: data.parseWarning,
           warningType: data.warningType,
         });
@@ -227,7 +227,7 @@ export default function UploadPage() {
           fileType: data.document.fileType,
           fileSize: data.document.fileSize,
           totalWords: data.document.content?.length || 0,
-          chunkCount: data.document.chunkCount,
+          chunkCount: data.rag?.chunkCount || 0,
         });
       }
 
@@ -292,14 +292,42 @@ export default function UploadPage() {
                   <p className="text-sm text-green-600 mt-1">
                     文档 "{uploadResult.documentTitle}" 已成功上传并完成解析
                   </p>
+                  <p className="text-sm font-semibold text-green-700 mt-1">
+                    解析成功：共切分为 {uploadResult.chunkCount || 0} 个片段
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="px-6 py-6">
-              <h4 className="text-lg font-medium text-gray-900 mb-4">文件解析统计</h4>
+              <h4 className="text-lg font-medium text-gray-900 mb-4">处理报告</h4>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-5 mb-6">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <span className="text-indigo-500 text-2xl">📊</span>
+                  </div>
+                  <div className="ml-4">
+                    <h5 className="text-base font-semibold text-indigo-900">向量化处理已完成</h5>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="bg-white rounded-md p-3 shadow-sm">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">总字数</p>
+                        <p className="text-xl font-bold text-gray-900 mt-1">
+                          {uploadResult.totalWords?.toLocaleString() || 0} 字符
+                        </p>
+                      </div>
+                      <div className="bg-white rounded-md p-3 shadow-sm">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide">切分分片</p>
+                        <p className="text-xl font-bold text-gray-900 mt-1">
+                          {uploadResult.chunkCount || 0} 个片段
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-lg p-4">
                   <div className="flex items-center">
                     <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
@@ -327,34 +355,6 @@ export default function UploadPage() {
                     </div>
                   </div>
                 </div>
-
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                      <span className="text-green-600">✍️</span>
-                    </div>
-                    <div className="ml-3">
-                      <p className="text-sm text-gray-500">总字数</p>
-                      <p className="text-lg font-medium text-gray-900">
-                        {uploadResult.totalWords?.toLocaleString() || 0} 字符
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
-                      <span className="text-orange-600">🧩</span>
-                    </div>
-                    <div className="ml-3">
-                      <p className="text-sm text-gray-500">分片数</p>
-                      <p className="text-lg font-medium text-gray-900">
-                        {uploadResult.chunkCount || 0} 个片段
-                      </p>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               {warning && (
@@ -371,20 +371,43 @@ export default function UploadPage() {
                 </div>
               )}
 
-              <div className="mt-8 flex justify-end space-x-4">
-                <button
-                  type="button"
-                  onClick={handleRetry}
-                  className="inline-flex items-center px-6 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  继续上传
-                </button>
-                <Link
-                  href="/dashboard"
-                  className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  返回列表
-                </Link>
+              <div className="mt-8">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                  <div className="flex flex-col sm:flex-row items-center justify-between">
+                    <div className="flex items-center mb-3 sm:mb-0">
+                      <div className="flex-shrink-0">
+                        <span className="text-green-500 text-xl">💬</span>
+                      </div>
+                      <div className="ml-3">
+                        <p className="text-sm font-medium text-green-800">文档已就绪！</p>
+                        <p className="text-xs text-green-600 mt-0.5">点击下方按钮即可开始测试 RAG 问答效果</p>
+                      </div>
+                    </div>
+                    <Link
+                      href="/chat"
+                      className="inline-flex items-center px-6 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm"
+                    >
+                      <span className="mr-2">🚀</span>
+                      立即测试问答
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-4">
+                  <button
+                    type="button"
+                    onClick={handleRetry}
+                    className="inline-flex items-center px-6 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    继续上传
+                  </button>
+                  <Link
+                    href="/dashboard"
+                    className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    返回列表
+                  </Link>
+                </div>
               </div>
             </div>
           </div>

@@ -11,7 +11,7 @@ export type AIProvider = typeof AI_PROVIDERS[keyof typeof AI_PROVIDERS];
 
 export const EMBEDDING_MODELS: Record<AIProvider, string[]> = {
   [AI_PROVIDERS.OPENAI]: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
-  [AI_PROVIDERS.DEEPSEEK]: ["deepseek-embed"],
+  [AI_PROVIDERS.DEEPSEEK]: ["deepseek-embedding"],
   [AI_PROVIDERS.DASHSCOPE]: ["text-embedding-v1", "text-embedding-v2", "text-embedding-v3"],
 };
 
@@ -23,7 +23,7 @@ export const LLM_MODELS: Record<AIProvider, string[]> = {
 
 export const PROVIDER_BASE_URLS: Record<AIProvider, string> = {
   [AI_PROVIDERS.OPENAI]: "https://api.openai.com/v1",
-  [AI_PROVIDERS.DEEPSEEK]: "https://api.deepseek.com/v1",
+  [AI_PROVIDERS.DEEPSEEK]: "https://api.deepseek.com",
   [AI_PROVIDERS.DASHSCOPE]: "https://dashscope.aliyuncs.com/compatible-mode/v1",
 };
 

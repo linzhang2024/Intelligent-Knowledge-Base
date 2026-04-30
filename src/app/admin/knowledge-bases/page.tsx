@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import BackButton from "@/components/ui/BackButton";
-import NavButtons from "@/components/ui/NavButtons";
+import AdminHeader from "@/components/ui/AdminHeader";
 
 interface Owner {
   id: string;

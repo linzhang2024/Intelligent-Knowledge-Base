@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import BackButton from "@/components/ui/BackButton";
+import NavButtons from "@/components/ui/NavButtons";
 
 interface User {
   id: string;
@@ -872,32 +874,11 @@ export default function UsersPage() {
 
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center">
-            <Link 
-              href="/admin" 
-              className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200 mr-4"
-            >
-              <span className="mr-2">←</span>
-              返回管理后台
-            </Link>
+          <div className="flex items-center space-x-3">
+            <BackButton href="/admin" label="返回管理后台" />
             <h1 className="text-xl font-bold text-gray-900">用户管理</h1>
           </div>
-          <div className="flex items-center space-x-3">
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center px-3 py-2 border border-green-200 rounded-md text-sm font-medium text-green-600 bg-white hover:bg-green-50 hover:border-green-300 transition-colors duration-200"
-            >
-              <span className="mr-2">🏠</span>
-              前台
-            </Link>
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center px-3 py-2 border border-red-200 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-colors duration-200"
-            >
-              <span className="mr-2">🚪</span>
-              退出
-            </button>
-          </div>
+          <NavButtons />
         </div>
       </header>
 

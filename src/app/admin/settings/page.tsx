@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import BackButton from "@/components/ui/BackButton";
+import NavButtons from "@/components/ui/NavButtons";
 
 type AIProvider = "OPENAI" | "DEEPSEEK" | "DASHSCOPE";
 
@@ -314,29 +316,11 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center">
-            <Link
-              href="/admin"
-              className="text-sm text-gray-600 hover:text-gray-900 mr-4"
-            >
-              ← 返回管理后台
-            </Link>
+          <div className="flex items-center space-x-3">
+            <BackButton href="/admin" label="返回管理后台" />
             <h1 className="text-xl font-bold text-gray-900">系统设置</h1>
           </div>
-          <div className="flex items-center space-x-4">
-            <Link
-              href="/dashboard"
-              className="text-sm text-gray-600 hover:text-gray-900"
-            >
-              前台
-            </Link>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-600 hover:text-gray-900"
-            >
-              退出
-            </button>
-          </div>
+          <NavButtons />
         </div>
       </header>
 

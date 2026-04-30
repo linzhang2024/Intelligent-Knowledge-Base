@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { formatFileSize, formatDate, formatDateTime } from "@/lib/format";
+import BackButton from "@/components/ui/BackButton";
 
 interface DocumentChunk {
   id: string;
@@ -170,13 +171,8 @@ export default function DocumentDetailPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center">
-            <Link
-              href="/dashboard"
-              className="text-gray-500 hover:text-gray-700 mr-4"
-            >
-              ← 返回
-            </Link>
+          <div className="flex items-center space-x-3">
+            <BackButton href="/dashboard" label="返回" />
             <div>
               <h1 className="text-xl font-bold text-gray-900">{document.title}</h1>
               <div className="flex items-center space-x-4 mt-1">

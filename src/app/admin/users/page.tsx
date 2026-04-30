@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -277,6 +278,167 @@ function BatchConfirmModal({
   );
 }
 
+interface ActionMenuProps {
+  user: User;
+  position: { 
+    top?: number; 
+    bottom?: number; 
+    left?: number; 
+    right?: number;
+  };
+  actionLoading: string | null;
+  onRoleChange: (userId: string, newRole: string) => void;
+  onStatusChange: (userId: string, newStatus: string) => void;
+  onDeleteClick: (user: User) => void;
+  onClose: () => void;
+}
+
+function ActionMenu({
+  user,
+  position,
+  actionLoading,
+  onRoleChange,
+  onStatusChange,
+  onDeleteClick,
+  onClose,
+}: ActionMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    zIndex: 9999,
+    ...(position.top !== undefined ? { top: position.top } : {}),
+    ...(position.bottom !== undefined ? { bottom: position.bottom } : {}),
+    ...(position.left !== undefined ? { left: position.left } : {}),
+    ...(position.right !== undefined ? { right: position.right } : {}),
+  };
+
+  const isActionLoading = actionLoading === user.id;
+
+  const portalContent = (
+    <div 
+      ref={menuRef}
+      style={style}
+      className="w-52 bg-white rounded-lg shadow-2xl ring-1 ring-black ring-opacity-10 focus:outline-none overflow-hidden"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="py-1">
+        <div className="px-4 py-2 text-xs text-gray-500 font-semibold bg-gray-50 border-b border-gray-100">
+          更改角色
+        </div>
+        {["ADMIN", "EDITOR", "VIEWER"].map((role) => (
+          <button
+            key={role}
+            onClick={() => onRoleChange(user.id, role)}
+            disabled={user.role === role || isActionLoading}
+            className={`w-full text-left px-4 py-3 text-sm transition-colors duration-150 flex items-center justify-between group ${
+              user.role === role || isActionLoading 
+                ? "text-gray-400 cursor-not-allowed bg-gray-50" 
+                : "text-gray-700 hover:bg-blue-50"
+            }`}
+          >
+            <span className="flex items-center">
+              <span className={`w-4 h-4 mr-3 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                user.role === role 
+                  ? "border-green-500 bg-green-500" 
+                  : "border-gray-300 group-hover:border-blue-400"
+              }`}>
+                {user.role === role && (
+                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </span>
+              <span className={`${user.role === role ? "font-semibold text-green-700" : ""}`}>
+                {ROLE_LABELS[role]}
+              </span>
+            </span>
+            {user.role === role && (
+              <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+        ))}
+
+        <div className="border-t border-gray-200 my-0"></div>
+
+        <div className="px-4 py-2 text-xs text-gray-500 font-semibold bg-gray-50 border-b border-gray-100">
+          更改状态
+        </div>
+        {["PENDING", "ACTIVE", "BANNED"].map((status) => (
+          <button
+            key={status}
+            onClick={() => onStatusChange(user.id, status)}
+            disabled={user.status === status || isActionLoading}
+            className={`w-full text-left px-4 py-3 text-sm transition-colors duration-150 flex items-center justify-between group ${
+              user.status === status || isActionLoading 
+                ? "text-gray-400 cursor-not-allowed bg-gray-50" 
+                : "text-gray-700 hover:bg-blue-50"
+            }`}
+          >
+            <span className="flex items-center">
+              <span className={`w-4 h-4 mr-3 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                user.status === status 
+                  ? "border-green-500 bg-green-500" 
+                  : "border-gray-300 group-hover:border-blue-400"
+              }`}>
+                {user.status === status && (
+                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </span>
+              <span className={`${user.status === status ? "font-semibold text-green-700" : ""}`}>
+                {STATUS_LABELS[status]}
+              </span>
+            </span>
+            {user.status === status && (
+              <svg className="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+        ))}
+
+        <div className="border-t border-gray-200 my-0"></div>
+
+        <button
+          onClick={() => onDeleteClick(user)}
+          disabled={isActionLoading}
+          className={`w-full text-left px-4 py-3 text-sm transition-colors duration-150 flex items-center group ${
+            isActionLoading 
+              ? "text-gray-400 cursor-not-allowed bg-gray-50" 
+              : "text-red-600 hover:bg-red-50"
+          }`}
+        >
+          <svg className="w-5 h-5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          删除用户
+        </button>
+      </div>
+    </div>
+  );
+
+  if (typeof window !== 'undefined' && document.body) {
+    return createPortal(portalContent, document.body);
+  }
+
+  return null;
+}
+
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
@@ -306,7 +468,12 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [dropdownDirection, setDropdownDirection] = useState<Record<string, 'up' | 'down'>>({});
+  const [dropdownPosition, setDropdownPosition] = useState<Record<string, { 
+    top?: number; 
+    bottom?: number; 
+    left?: number; 
+    right?: number;
+  }>>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
@@ -598,34 +765,77 @@ export default function UsersPage() {
   const toggleDropdown = (userId: string, event: React.MouseEvent<HTMLButtonElement>) => {
     if (activeDropdown === userId) {
       setActiveDropdown(null);
-      setDropdownDirection(prev => {
-        const newDir = { ...prev };
-        delete newDir[userId];
-        return newDir;
+      setDropdownPosition(prev => {
+        const newPos = { ...prev };
+        delete newPos[userId];
+        return newPos;
       });
     } else {
       const button = event.currentTarget;
       const rect = button.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      const menuHeight = 400;
+      const menuWidth = 208;
+      const menuHeight = 350;
+      const padding = 16;
       
-      const spaceBelow = viewportHeight - rect.bottom;
-      const direction: 'up' | 'down' = spaceBelow >= menuHeight ? 'down' : 'up';
+      let top: number | undefined;
+      let bottom: number | undefined;
+      let left: number | undefined;
+      let right: number | undefined;
+      
+      const spaceBelow = viewportHeight - rect.bottom - padding;
+      const spaceAbove = rect.top - padding;
+      
+      if (spaceBelow >= menuHeight) {
+        top = rect.bottom + 4;
+      } else if (spaceAbove >= menuHeight) {
+        bottom = viewportHeight - rect.top + 4;
+      } else {
+        if (spaceBelow >= spaceAbove) {
+          top = rect.bottom + 4;
+        } else {
+          bottom = viewportHeight - rect.top + 4;
+        }
+      }
+      
+      const spaceToRight = viewportWidth - rect.right - padding;
+      const spaceToLeft = rect.left - padding;
+      
+      if (spaceToRight >= menuWidth) {
+        left = rect.left;
+      } else if (spaceToLeft >= menuWidth) {
+        right = viewportWidth - rect.right;
+      } else {
+        if (spaceToRight >= spaceToLeft) {
+          left = padding;
+        } else {
+          right = padding;
+        }
+      }
       
       setActiveDropdown(userId);
-      setDropdownDirection(prev => ({ ...prev, [userId]: direction }));
+      setDropdownPosition(prev => ({ 
+        ...prev, 
+        [userId]: { top, bottom, left, right } 
+      }));
     }
   };
 
+  const handleCloseDropdown = useCallback(() => {
+    setActiveDropdown(null);
+    setDropdownPosition({});
+  }, []);
+
   useEffect(() => {
     const handleClickOutside = () => {
-      if (activeDropdown) {
-        setActiveDropdown(null);
-      }
     };
     document.addEventListener("click", handleClickOutside);
     return () => document.removeEventListener("click", handleClickOutside);
   }, [activeDropdown]);
+
+  const activeUser = users.find(u => u.id === activeDropdown);
+  const activePosition = activeDropdown ? dropdownPosition[activeDropdown] : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -647,6 +857,18 @@ export default function UsersPage() {
         onCancel={handleBatchCancel}
         isLoading={batchLoading}
       />
+
+      {activeUser && activePosition && (
+        <ActionMenu
+          user={activeUser}
+          position={activePosition}
+          actionLoading={actionLoading}
+          onRoleChange={handleRoleChange}
+          onStatusChange={handleStatusChange}
+          onDeleteClick={handleDeleteClick}
+          onClose={handleCloseDropdown}
+        />
+      )}
 
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
@@ -789,7 +1011,7 @@ export default function UsersPage() {
             </div>
           ) : (
             <>
-              <div className="overflow-visible">
+              <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -867,139 +1089,53 @@ export default function UsersPage() {
                           {new Date(user.createdAt).toLocaleDateString("zh-CN")}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <div className="relative inline-block">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleDropdown(user.id, e);
-                              }}
-                              disabled={actionLoading === user.id}
-                              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                            >
-                              {actionLoading === user.id ? (
-                                <svg
-                                  className="animate-spin h-4 w-4"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <circle
-                                    className="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                  ></circle>
-                                  <path
-                                    className="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                  ></path>
-                                </svg>
-                              ) : (
-                                <>
-                                  操作
-                                  <svg
-                                    className="ml-1 h-4 w-4"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                  >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                </>
-                              )}
-                            </button>
-
-                            {activeDropdown === user.id && (
-                              <div
-                                className={`absolute right-0 z-10 w-48 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none ${
-                                  dropdownDirection[user.id] === 'up' 
-                                    ? 'bottom-full mb-2' 
-                                    : 'mt-2'
-                                }`}
-                                onClick={(e) => e.stopPropagation()}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDropdown(user.id, e);
+                            }}
+                            disabled={actionLoading === user.id}
+                            className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                          >
+                            {actionLoading === user.id ? (
+                              <svg
+                                className="animate-spin h-4 w-4"
+                                xmlns="http://www.w3.org/2000/svg"
+                                fill="none"
+                                viewBox="0 0 24 24"
                               >
-                                <div className="py-1">
-                                  <div className="px-4 py-2 text-xs text-gray-400 font-medium">
-                                    更改角色
-                                  </div>
-                                  {["ADMIN", "EDITOR", "VIEWER"].map((role) => (
-                                    <button
-                                      key={role}
-                                      onClick={() => handleRoleChange(user.id, role)}
-                                      disabled={user.role === role || actionLoading === user.id}
-                                      className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${
-                                        user.role === role || actionLoading === user.id 
-                                          ? "text-gray-400 cursor-not-allowed bg-gray-50" 
-                                          : "text-gray-700 hover:bg-gray-100"
-                                      }`}
-                                    >
-                                      <span className="flex items-center justify-between">
-                                        <span>{ROLE_LABELS[role]}</span>
-                                        {user.role === role && (
-                                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                          </svg>
-                                        )}
-                                      </span>
-                                    </button>
-                                  ))}
-
-                                  <div className="border-t border-gray-200 my-1"></div>
-
-                                  <div className="px-4 py-2 text-xs text-gray-400 font-medium">
-                                    更改状态
-                                  </div>
-                                  {["PENDING", "ACTIVE", "BANNED"].map((status) => (
-                                    <button
-                                      key={status}
-                                      onClick={() => handleStatusChange(user.id, status)}
-                                      disabled={user.status === status || actionLoading === user.id}
-                                      className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${
-                                        user.status === status || actionLoading === user.id 
-                                          ? "text-gray-400 cursor-not-allowed bg-gray-50" 
-                                          : "text-gray-700 hover:bg-gray-100"
-                                      }`}
-                                    >
-                                      <span className="flex items-center justify-between">
-                                        <span>{STATUS_LABELS[status]}</span>
-                                        {user.status === status && (
-                                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                          </svg>
-                                        )}
-                                      </span>
-                                    </button>
-                                  ))}
-
-                                  <div className="border-t border-gray-200 my-1"></div>
-
-                                  <button
-                                    onClick={() => handleDeleteClick(user)}
-                                    disabled={actionLoading === user.id}
-                                    className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${
-                                      actionLoading === user.id 
-                                        ? "text-gray-400 cursor-not-allowed bg-gray-50" 
-                                        : "text-red-600 hover:bg-red-50"
-                                    }`}
-                                  >
-                                    <span className="flex items-center">
-                                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                      </svg>
-                                      删除用户
-                                    </span>
-                                  </button>
-                                </div>
-                              </div>
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                ></circle>
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                ></path>
+                              </svg>
+                            ) : (
+                              <>
+                                操作
+                                <svg
+                                  className="ml-1 h-4 w-4"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </>
                             )}
-                          </div>
+                          </button>
                         </td>
                       </tr>
                     ))}

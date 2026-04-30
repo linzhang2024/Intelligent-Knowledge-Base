@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import BackButton from "@/components/ui/BackButton";
-import NavButtons from "@/components/ui/NavButtons";
+import AdminHeader from "@/components/ui/AdminHeader";
 
 interface User {
   id: string;
@@ -872,15 +871,7 @@ export default function UsersPage() {
         />
       )}
 
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <BackButton href="/admin" label="返回管理后台" />
-            <h1 className="text-xl font-bold text-gray-900">用户管理</h1>
-          </div>
-          <NavButtons />
-        </div>
-      </header>
+      <AdminHeader title="用户管理" backHref="/admin" />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white shadow sm:rounded-lg">

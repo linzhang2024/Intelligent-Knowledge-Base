@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import BackButton from "@/components/ui/BackButton";
-import NavButtons from "@/components/ui/NavButtons";
+import AdminHeader from "@/components/ui/AdminHeader";
 
 interface Author {
   id: string;
@@ -617,15 +616,7 @@ export default function DocumentsPage() {
         onConfirm={handleDeleteConfirm}
       />
 
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <BackButton href="/admin" label="返回管理后台" />
-            <h1 className="text-xl font-bold text-gray-900">文档管理</h1>
-          </div>
-          <NavButtons />
-        </div>
-      </header>
+      <AdminHeader title="文档管理" backHref="/admin" />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white shadow sm:rounded-lg">

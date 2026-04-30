@@ -237,19 +237,38 @@ export default function UploadPage() {
 
       await simulateProgress(id, "chunking", 70, 95, 400);
 
-      const result: UploadResult = {
-        success: true,
-        documentId: data.document.id,
-        documentTitle: data.document.title,
-        fileType: data.document.fileType,
-        fileSize: data.document.fileSize,
-        totalWords: data.document.content?.length || 0,
-        chunkCount: data.rag?.chunkCount || 0,
-        warning: data.parseWarning,
-        warningType: data.warningType,
-      };
+      const isParseError = data.warningType && 
+        (data.warningType === "EmptyContentError" || 
+         data.warningType === "ScannedPDFError" || 
+         data.warningType === "EncryptedPDFError" ||
+         data.warningType === "CorruptedFileError");
 
-      updateFile(id, { status: "success", progress: 100, result });
+      if (isParseError) {
+        const errorMessage = data.parseWarning || "文档解析失败";
+        updateFile(id, {
+          status: "error",
+          progress: 100,
+          error: errorMessage,
+          result: {
+            success: false,
+            error: errorMessage,
+          },
+        });
+      } else {
+        const result: UploadResult = {
+          success: true,
+          documentId: data.document?.id,
+          documentTitle: data.document?.title,
+          fileType: data.document?.fileType,
+          fileSize: data.document?.fileSize,
+          totalWords: data.document?.content?.length || 0,
+          chunkCount: data.rag?.chunkCount || 0,
+          warning: data.parseWarning,
+          warningType: data.warningType,
+        };
+
+        updateFile(id, { status: "success", progress: 100, result });
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "上传失败，请稍后重试";
       updateFile(id, {

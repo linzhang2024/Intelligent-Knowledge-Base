@@ -38,13 +38,13 @@ export default function NavButtons({
       {showFrontDesk && (
         <Link
           href={frontDeskHref}
-          className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-green-200 bg-white text-green-600 hover:bg-green-50 hover:border-green-300 hover:scale-105 transition-all duration-200"
-          aria-label="前台"
+          className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 hover:border-gray-300 hover:text-gray-900 transition-all duration-200"
         >
           <svg
+            className="mr-2"
             xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
+            width="16"
+            height="16"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -55,18 +55,19 @@ export default function NavButtons({
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
+          返回前台
         </Link>
       )}
       {showLogout && (
         <button
           onClick={handleLogout}
-          className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-300 hover:scale-105 transition-all duration-200"
-          aria-label="退出"
+          className="inline-flex items-center px-3 py-2 border border-red-200 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-all duration-200"
         >
           <svg
+            className="mr-2"
             xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
+            width="16"
+            height="16"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -78,6 +79,7 @@ export default function NavButtons({
             <polyline points="16 17 21 12 16 7" />
             <line x1="21" y1="12" x2="9" y2="12" />
           </svg>
+          退出
         </button>
       )}
     </div>

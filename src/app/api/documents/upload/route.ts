@@ -48,6 +48,13 @@ class UnsupportedFormatError extends DocumentParseError {
   }
 }
 
+class EmptyContentError extends DocumentParseError {
+  constructor(fileType: string) {
+    super(`解析失败: 内容提取为空。${fileType} 文件可能是扫描版、加密或仅包含图片，请提供可编辑的文本内容文档`);
+    this.name = "EmptyContentError";
+  }
+}
+
 function splitTextIntoChunks(text: string, chunkSize: number = CHUNK_SIZE, overlap: number = CHUNK_OVERLAP): string[] {
   if (!text || text.length === 0) {
     return [];
@@ -121,7 +128,7 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
           throw new ScannedPDFError();
         }
         
-        return "";
+        throw new EmptyContentError("PDF");
       }
       
       return text;
@@ -180,7 +187,7 @@ async function extractTextFromDOCX(filePath: string): Promise<string> {
       
       if (text.trim().length === 0) {
         console.warn("DOCX 文件解析后文本为空，可能是仅包含图片的文档");
-        return "";
+        throw new EmptyContentError("DOCX");
       }
       
       return text;
@@ -216,8 +223,17 @@ async function extractTextFromTXT(filePath: string): Promise<string> {
     
     console.log("TXT 解析完成，文本长度:", content.length);
     
+    if (content.trim().length === 0) {
+      console.warn("TXT 文件内容为空");
+      throw new EmptyContentError("TXT");
+    }
+    
     return content;
   } catch (error) {
+    if (error instanceof DocumentParseError) {
+      throw error;
+    }
+    
     console.error("TXT 文本提取失败:", error);
     
     if (error instanceof Error && error.message.includes("encoding")) {
@@ -290,6 +306,7 @@ export async function POST(request: NextRequest) {
 
     let extractedContent = content || "";
     let parseError: DocumentParseError | null = null;
+    let textChunks: string[] = [];
 
     try {
       if (fileExtension === ".pdf") {
@@ -302,17 +319,21 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       if (error instanceof DocumentParseError) {
         parseError = error;
-        console.log("文档解析失败，但继续保存文档记录:", error.message);
+        console.log("文档解析失败，跳过向量化流程:", error.message);
       } else {
         throw error;
       }
     }
 
-    const textChunks = splitTextIntoChunks(extractedContent);
-    console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
-    console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
-    if (textChunks.length > 0) {
-      console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
+    if (!parseError) {
+      textChunks = splitTextIntoChunks(extractedContent);
+      console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
+      console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
+      if (textChunks.length > 0) {
+        console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
+      }
+    } else {
+      console.log(`[RAG 预处理] 文档 "${title}" 解析失败，跳过切片和向量化流程`);
     }
 
     if (knowledgeBaseId && knowledgeBaseId.trim()) {

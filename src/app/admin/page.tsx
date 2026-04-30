@@ -101,12 +101,15 @@ export default function AdminPage() {
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-gray-900">管理后台</h1>
           </div>
-          <Link
-            href="/dashboard"
-            className="text-sm text-gray-600 hover:text-gray-900"
-          >
-            ← 返回前台
-          </Link>
+          <div className="flex items-center space-x-3">
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center px-3 py-2 border border-green-200 rounded-md text-sm font-medium text-green-600 bg-white hover:bg-green-50 hover:border-green-300 transition-colors duration-200"
+            >
+              <span className="mr-2">🏠</span>
+              返回前台
+            </Link>
+          </div>
         </div>
       </header>
 

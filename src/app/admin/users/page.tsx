@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -306,6 +306,8 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [dropdownDirection, setDropdownDirection] = useState<Record<string, 'up' | 'down'>>({});
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState<DeleteModalState>({
@@ -593,8 +595,26 @@ export default function UsersPage() {
     setBatchModal({ isOpen: false, action: "approve" });
   };
 
-  const toggleDropdown = (userId: string) => {
-    setActiveDropdown(activeDropdown === userId ? null : userId);
+  const toggleDropdown = (userId: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    if (activeDropdown === userId) {
+      setActiveDropdown(null);
+      setDropdownDirection(prev => {
+        const newDir = { ...prev };
+        delete newDir[userId];
+        return newDir;
+      });
+    } else {
+      const button = event.currentTarget;
+      const rect = button.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const menuHeight = 400;
+      
+      const spaceBelow = viewportHeight - rect.bottom;
+      const direction: 'up' | 'down' = spaceBelow >= menuHeight ? 'down' : 'up';
+      
+      setActiveDropdown(userId);
+      setDropdownDirection(prev => ({ ...prev, [userId]: direction }));
+    }
   };
 
   useEffect(() => {
@@ -631,22 +651,28 @@ export default function UsersPage() {
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <Link href="/admin" className="text-sm text-gray-600 hover:text-gray-900 mr-4">
-              ← 返回管理后台
+            <Link 
+              href="/admin" 
+              className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200 mr-4"
+            >
+              <span className="mr-2">←</span>
+              返回管理后台
             </Link>
             <h1 className="text-xl font-bold text-gray-900">用户管理</h1>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <Link
               href="/dashboard"
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="inline-flex items-center px-3 py-2 border border-green-200 rounded-md text-sm font-medium text-green-600 bg-white hover:bg-green-50 hover:border-green-300 transition-colors duration-200"
             >
+              <span className="mr-2">🏠</span>
               前台
             </Link>
             <button
               onClick={handleLogout}
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="inline-flex items-center px-3 py-2 border border-red-200 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-colors duration-200"
             >
+              <span className="mr-2">🚪</span>
               退出
             </button>
           </div>
@@ -845,10 +871,10 @@ export default function UsersPage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleDropdown(user.id);
+                                toggleDropdown(user.id, e);
                               }}
                               disabled={actionLoading === user.id}
-                              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                             >
                               {actionLoading === user.id ? (
                                 <svg
@@ -892,11 +918,15 @@ export default function UsersPage() {
 
                             {activeDropdown === user.id && (
                               <div
-                                className="absolute right-0 z-10 mt-2 w-48 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                                className={`absolute right-0 z-10 w-48 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none ${
+                                  dropdownDirection[user.id] === 'up' 
+                                    ? 'bottom-full mb-2' 
+                                    : 'mt-2'
+                                }`}
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <div className="py-1">
-                                  <div className="px-4 py-2 text-xs text-gray-400">
+                                  <div className="px-4 py-2 text-xs text-gray-400 font-medium">
                                     更改角色
                                   </div>
                                   {["ADMIN", "EDITOR", "VIEWER"].map((role) => (
@@ -904,16 +934,26 @@ export default function UsersPage() {
                                       key={role}
                                       onClick={() => handleRoleChange(user.id, role)}
                                       disabled={user.role === role || actionLoading === user.id}
-                                      className={`w-full text-left px-4 py-2 text-sm ${user.role === role || actionLoading === user.id ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
+                                      className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${
+                                        user.role === role || actionLoading === user.id 
+                                          ? "text-gray-400 cursor-not-allowed bg-gray-50" 
+                                          : "text-gray-700 hover:bg-gray-100"
+                                      }`}
                                     >
-                                      {ROLE_LABELS[role]}
-                                      {user.role === role && " ✓"}
+                                      <span className="flex items-center justify-between">
+                                        <span>{ROLE_LABELS[role]}</span>
+                                        {user.role === role && (
+                                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </span>
                                     </button>
                                   ))}
 
-                                  <div className="border-t border-gray-100 my-1"></div>
+                                  <div className="border-t border-gray-200 my-1"></div>
 
-                                  <div className="px-4 py-2 text-xs text-gray-400">
+                                  <div className="px-4 py-2 text-xs text-gray-400 font-medium">
                                     更改状态
                                   </div>
                                   {["PENDING", "ACTIVE", "BANNED"].map((status) => (
@@ -921,21 +961,40 @@ export default function UsersPage() {
                                       key={status}
                                       onClick={() => handleStatusChange(user.id, status)}
                                       disabled={user.status === status || actionLoading === user.id}
-                                      className={`w-full text-left px-4 py-2 text-sm ${user.status === status || actionLoading === user.id ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-gray-700 hover:bg-gray-100"}`}
+                                      className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${
+                                        user.status === status || actionLoading === user.id 
+                                          ? "text-gray-400 cursor-not-allowed bg-gray-50" 
+                                          : "text-gray-700 hover:bg-gray-100"
+                                      }`}
                                     >
-                                      {STATUS_LABELS[status]}
-                                      {user.status === status && " ✓"}
+                                      <span className="flex items-center justify-between">
+                                        <span>{STATUS_LABELS[status]}</span>
+                                        {user.status === status && (
+                                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        )}
+                                      </span>
                                     </button>
                                   ))}
 
-                                  <div className="border-t border-gray-100 my-1"></div>
+                                  <div className="border-t border-gray-200 my-1"></div>
 
                                   <button
                                     onClick={() => handleDeleteClick(user)}
                                     disabled={actionLoading === user.id}
-                                    className={`w-full text-left px-4 py-2 text-sm ${actionLoading === user.id ? "text-gray-400 cursor-not-allowed bg-gray-50" : "text-red-600 hover:bg-red-50"}`}
+                                    className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 ${
+                                      actionLoading === user.id 
+                                        ? "text-gray-400 cursor-not-allowed bg-gray-50" 
+                                        : "text-red-600 hover:bg-red-50"
+                                    }`}
                                   >
-                                    删除用户
+                                    <span className="flex items-center">
+                                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                      删除用户
+                                    </span>
                                   </button>
                                 </div>
                               </div>

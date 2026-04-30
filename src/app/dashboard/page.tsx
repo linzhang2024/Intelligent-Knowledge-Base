@@ -130,30 +130,38 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">智能知识库</h1>
-          <div className="flex items-center space-x-4">
-            <Link
-              href="/chat"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-            >
-              💬 智能问答
-            </Link>
-            <Link
-              href="/documents/upload"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-              上传文档
-            </Link>
+          <div className="flex items-center space-x-6">
+            <h1 className="text-2xl font-bold text-gray-900">智能知识库</h1>
+            <div className="flex items-center space-x-3">
+              <Link
+                href="/chat"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-200"
+              >
+                <span className="mr-2">💬</span>
+                智能问答
+              </Link>
+              <Link
+                href="/documents/upload"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-colors duration-200"
+              >
+                <span className="mr-2">📄</span>
+                上传文档
+              </Link>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
             <Link
               href="/admin"
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
             >
+              <span className="mr-2">⚙️</span>
               管理后台
             </Link>
             <button
               onClick={handleLogout}
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="inline-flex items-center px-3 py-2 border border-red-200 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-colors duration-200"
             >
+              <span className="mr-2">🚪</span>
               退出
             </button>
           </div>

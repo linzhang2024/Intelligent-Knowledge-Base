@@ -275,37 +275,45 @@ export default function ChatPage() {
       <header className="bg-white shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link href="/dashboard" className="text-xl font-bold text-gray-900 hover:text-indigo-600">
-                智能知识库
-              </Link>
-              <span className="text-gray-300">|</span>
-              <span className="text-sm text-gray-600">知识库问答</span>
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center space-x-4">
+                <Link href="/dashboard" className="text-xl font-bold text-gray-900 hover:text-indigo-600">
+                  智能知识库
+                </Link>
+                <span className="text-gray-300">|</span>
+                <span className="text-sm text-gray-600">知识库问答</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={clearChat}
+                  className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
+                  disabled={isLoading}
+                >
+                  <span className="mr-2">🗑️</span>
+                  清空对话
+                </button>
+                <Link
+                  href="/documents/upload"
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-colors duration-200"
+                >
+                  <span className="mr-2">📄</span>
+                  上传文档
+                </Link>
+              </div>
             </div>
             <div className="flex items-center space-x-3">
-              <button
-                onClick={clearChat}
-                className="text-sm text-gray-500 hover:text-gray-700"
-                disabled={isLoading}
-              >
-                清空对话
-              </button>
-              <Link
-                href="/documents/upload"
-                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-              >
-                上传文档
-              </Link>
               <Link
                 href="/dashboard"
-                className="text-sm text-gray-600 hover:text-gray-900"
+                className="inline-flex items-center px-3 py-2 border border-green-200 rounded-md text-sm font-medium text-green-600 bg-white hover:bg-green-50 hover:border-green-300 transition-colors duration-200"
               >
+                <span className="mr-2">🏠</span>
                 工作台
               </Link>
               <button
                 onClick={handleLogout}
-                className="text-sm text-gray-600 hover:text-gray-900"
+                className="inline-flex items-center px-3 py-2 border border-red-200 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-colors duration-200"
               >
+                <span className="mr-2">🚪</span>
                 退出
               </button>
             </div>

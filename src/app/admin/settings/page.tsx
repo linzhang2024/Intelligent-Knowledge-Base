@@ -298,7 +298,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AdminHeader title="系统设置" backHref="/admin" />
+      <AdminHeader title="系统设置" showBackButton={false} showNavMenu={true} />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {saveMessage && (

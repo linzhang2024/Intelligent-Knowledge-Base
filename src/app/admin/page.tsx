@@ -251,26 +251,6 @@ export default function AdminPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-lg font-medium text-gray-900 mb-6">快捷访问</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {quickAccessItems.map((item) => (
-              <a
-                key={item.id}
-                href={item.href}
-                className="group flex flex-col items-center justify-center p-6 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all duration-200"
-              >
-                <div className={`p-3 rounded-lg ${item.bgColor} ${item.color} group-hover:scale-110 transition-transform duration-200 mb-3`}>
-                  {item.icon}
-                </div>
-                <span className="text-sm font-medium text-gray-700 group-hover:text-indigo-600 transition-colors duration-200">
-                  {item.label}
-                </span>
-              </a>
-            ))}
-          </div>
-        </div>
-
-        <div>
           <h2 className="text-lg font-medium text-gray-900 mb-6">系统概览</h2>
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -380,6 +360,26 @@ export default function AdminPage() {
               </div>
             </div>
           ) : null}
+        </div>
+
+        <div>
+          <h2 className="text-lg font-medium text-gray-900 mb-6">快捷访问</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {quickAccessItems.map((item) => (
+              <a
+                key={item.id}
+                href={item.href}
+                className="group flex flex-col items-center justify-center p-6 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all duration-200"
+              >
+                <div className={`p-3 rounded-lg ${item.bgColor} ${item.color} group-hover:scale-110 transition-transform duration-200 mb-3`}>
+                  {item.icon}
+                </div>
+                <span className="text-sm font-medium text-gray-700 group-hover:text-indigo-600 transition-colors duration-200">
+                  {item.label}
+                </span>
+              </a>
+            ))}
+          </div>
         </div>
       </main>
     </div>

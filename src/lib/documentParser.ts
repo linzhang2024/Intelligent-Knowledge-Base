@@ -1,5 +1,4 @@
 import { readFile } from "fs/promises";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import path from "path";
 
 export class DocumentParseError extends Error {
@@ -44,35 +43,7 @@ export class EmptyContentError extends DocumentParseError {
   }
 }
 
-let pdfjsInitialized = false;
-
-function initializePDFJS() {
-  if (pdfjsInitialized) {
-    return;
-  }
-
-  try {
-    const workerSrc = path.join(
-      process.cwd(),
-      "node_modules",
-      "pdfjs-dist",
-      "legacy",
-      "build",
-      "pdf.worker.mjs"
-    );
-
-    (pdfjsLib as any).GlobalWorkerOptions.workerSrc = workerSrc;
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
-
-    pdfjsInitialized = true;
-    console.log("[PDF解析器] pdfjs-dist 初始化完成");
-    console.log(`[PDF解析器] Worker 路径: ${workerSrc}`);
-  } catch (error) {
-    console.warn("[PDF解析器] 初始化警告:", error);
-  }
-}
-
-export function validatePDFHeader(buffer: Buffer): boolean {
+function validatePDFHeader(buffer: Buffer): boolean {
   if (buffer.length < 5) {
     return false;
   }
@@ -80,39 +51,7 @@ export function validatePDFHeader(buffer: Buffer): boolean {
   return header === "%PDF-";
 }
 
-async function extractTextFromPDFPage(page: any): Promise<string> {
-  const textContent = await page.getTextContent();
-  let pageText = "";
-
-  let lastY: number | null = null;
-  let lastFontSize: number | null = null;
-
-  for (const item of textContent.items) {
-    if (!("str" in item)) continue;
-
-    const str = (item as any).str;
-    if (!str) continue;
-
-    const transform = (item as any).transform;
-    const fontSize = transform ? transform[0] : 12;
-    const y = transform ? transform[5] : 0;
-
-    if (lastY !== null && Math.abs(lastY - y) > fontSize * 1.5) {
-      pageText += "\n";
-    }
-
-    pageText += str + " ";
-
-    lastY = y;
-    lastFontSize = fontSize;
-  }
-
-  return pageText.trim();
-}
-
 async function extractTextFromPDF(filePath: string): Promise<string> {
-  let doc: any = null;
-
   try {
     console.log(`[PDF解析器] 开始解析 PDF 文件: ${filePath}`);
 
@@ -129,45 +68,63 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
     }
 
     console.log("[PDF解析器] PDF 文件头验证通过");
-    initializePDFJS();
 
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(dataBuffer),
-      verbosity: 0,
-      useSystemFonts: true,
-      cMapPacked: true,
-    });
+    const pdfParseModule = await import("pdf-parse");
+    const { PDFParse, PasswordException, InvalidPDFException, FormatError } = pdfParseModule;
 
-    console.log("[PDF解析器] 开始加载 PDF 文档...");
-    doc = await loadingTask.promise;
+    console.log("[PDF解析器] pdf-parse 模块加载成功");
 
-    const numPages = doc.numPages;
-    console.log(`[PDF解析器] PDF 文档加载成功，页数: ${numPages}`);
+    const workerSrc = path.join(
+      process.cwd(),
+      "node_modules",
+      "pdf-parse",
+      "dist",
+      "worker",
+      "esm",
+      "index.js"
+    );
 
-    let fullText = "";
-
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      console.log(`[PDF解析器] 正在解析第 ${pageNum}/${numPages} 页...`);
-
-      try {
-        const page = await doc.getPage(pageNum);
-        const pageText = await extractTextFromPDFPage(page);
-
-        if (pageText) {
-          fullText += pageText + "\n\n";
-        }
-
-        if (page && typeof page.cleanup === "function") {
-          page.cleanup();
-        }
-      } catch (pageError) {
-        console.warn(`[PDF解析器] 第 ${pageNum} 页解析失败，继续解析其他页: ${pageError}`);
-      }
+    console.log(`[PDF解析器] 配置 Worker: ${workerSrc}`);
+    
+    try {
+      PDFParse.setWorker(workerSrc);
+      console.log("[PDF解析器] Worker 配置完成");
+    } catch (workerError) {
+      console.warn("[PDF解析器] Worker 配置警告:", workerError);
     }
 
-    console.log(`[PDF解析器] 文本提取完成，总长度: ${fullText.length} 字符`);
+    const parser = new PDFParse({ 
+      data: dataBuffer,
+      verbosity: 0
+    });
+
+    console.log("[PDF解析器] PDFParse 实例创建成功");
+
+    console.log("[PDF解析器] 开始提取文本...");
+    const textResult = await parser.getText();
+    const fullText = textResult.text || "";
+
+    console.log(`[PDF解析器] 文本提取完成，长度: ${fullText.length} 字符`);
+
+    let numPages = textResult.total || 0;
+    
+    try {
+      const infoResult = await parser.getInfo({ parsePageInfo: true });
+      numPages = infoResult.total || numPages;
+      console.log(`[PDF解析器] PDF 解析完成，页数: ${numPages}`);
+    } catch (infoError) {
+      console.warn("[PDF解析器] 获取 PDF 信息失败:", infoError);
+    }
+
+    try {
+      await parser.destroy();
+      console.log("[PDF解析器] 解析器已销毁");
+    } catch (destroyError) {
+      console.warn("[PDF解析器] 解析器销毁警告:", destroyError);
+    }
 
     const trimmedText = fullText.trim();
+    console.log(`[PDF解析器] 有效文本长度: ${trimmedText.length} 字符`);
 
     if (trimmedText.length < 10) {
       if (numPages > 0 && trimmedText.length === 0) {
@@ -183,6 +140,21 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
 
     if (pdfError instanceof DocumentParseError) {
       throw pdfError;
+    }
+
+    try {
+      const pdfParseModule = await import("pdf-parse");
+      const { PasswordException, InvalidPDFException, FormatError } = pdfParseModule;
+
+      if (pdfError instanceof PasswordException) {
+        throw new EncryptedPDFError();
+      }
+
+      if (pdfError instanceof InvalidPDFException || pdfError instanceof FormatError) {
+        throw new CorruptedFileError("PDF");
+      }
+    } catch (importError) {
+      console.warn("[PDF解析器] 导入异常类型失败:", importError);
     }
 
     const errorMessage =
@@ -213,16 +185,6 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
 
     console.error("[PDF解析器] 文本提取失败:", pdfError);
     throw new DocumentParseError(`PDF 解析失败: ${errorMessage}`);
-  } finally {
-    if (doc) {
-      try {
-        console.log("[PDF解析器] 正在销毁 PDF 文档...");
-        await doc.destroy();
-        console.log("[PDF解析器] PDF 文档已销毁");
-      } catch (e) {
-        console.warn("[PDF解析器] 文档销毁失败:", e);
-      }
-    }
   }
 }
 
@@ -373,4 +335,4 @@ export function getDocumentTypeFromMimeType(mimeType: string): DocumentType | nu
   return null;
 }
 
-export { extractTextFromPDF, extractTextFromDOCX, extractTextFromTXT, initializePDFJS };
+export { extractTextFromPDF, extractTextFromDOCX, extractTextFromTXT };

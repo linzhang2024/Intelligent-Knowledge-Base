@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import LogoutButton from "@/components/ui/LogoutButton";
 
 interface KnowledgeBase {
   id: string;
@@ -249,17 +250,6 @@ export default function ChatPage() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch("/api/auth/logout", { method: "POST" });
-      if (response.ok) {
-        router.push("/login");
-      }
-    } catch (error) {
-      console.error("登出失败:", error);
-    }
-  };
-
   const clearChat = () => {
     setMessages([]);
     setError(null);
@@ -306,13 +296,6 @@ export default function ChatPage() {
                 href="/dashboard"
                 className="inline-flex items-center px-3 py-2 border border-green-200 rounded-md text-sm font-medium text-green-600 bg-white hover:bg-green-50 hover:border-green-300 transition-colors duration-200"
               >
-                <span className="mr-2">🏠</span>
-                工作台
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="inline-flex items-center px-3 py-2 border border-red-200 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-all duration-200"
-              >
                 <svg
                   className="mr-2"
                   xmlns="http://www.w3.org/2000/svg"
@@ -325,12 +308,12 @@ export default function ChatPage() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
                 </svg>
-                退出
-              </button>
+                工作台
+              </Link>
+
             </div>
           </div>
         </div>

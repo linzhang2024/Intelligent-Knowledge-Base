@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatDate, formatFileSize } from "@/lib/format";
-import LogoutButton from "@/components/ui/LogoutButton";
 
 interface KnowledgeBase {
   id: string;
@@ -68,6 +67,21 @@ export default function DashboardPage() {
 
     fetchData();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+      if (response.ok) {
+        router.push("/login");
+        router.refresh();
+      }
+    } catch (error) {
+      console.error("登出失败:", error);
+      router.push("/login");
+    }
+  };
 
   const handleExport = async (kbId: string, kbName: string) => {
     setExportingId(kbId);
@@ -140,24 +154,16 @@ export default function DashboardPage() {
               href="/admin"
               className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
             >
-              <svg
-                className="mr-2"
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
+              <span className="mr-2">⚙️</span>
               管理后台
             </Link>
-            <LogoutButton />
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center px-3 py-2 border border-red-200 rounded-md text-sm font-medium text-red-600 bg-white hover:bg-red-50 hover:border-red-300 transition-colors duration-200"
+            >
+              <span className="mr-2">🚪</span>
+              退出
+            </button>
           </div>
         </div>
       </header>

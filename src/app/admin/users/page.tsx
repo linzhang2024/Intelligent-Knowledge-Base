@@ -443,6 +443,21 @@ function ActionMenu({
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
+
+  const handleLogout = async () => {
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+      if (response.ok) {
+        router.push("/login");
+        router.refresh();
+      }
+    } catch (error) {
+      console.error("登出失败:", error);
+      router.push("/login");
+    }
+  };
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 10,

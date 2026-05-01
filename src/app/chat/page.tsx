@@ -313,7 +313,7 @@ export default function ChatPage() {
                 </svg>
                 工作台
               </Link>
-              <LogoutButton />
+
             </div>
           </div>
         </div>

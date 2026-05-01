@@ -157,7 +157,6 @@ export default function DashboardPage() {
               </svg>
               管理后台
             </Link>
-            <LogoutButton />
           </div>
         </div>
       </header>

@@ -1,59 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir, readFile } from "fs/promises";
+import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import prisma from "@/lib/prisma";
 import { formatFileSize } from "@/lib/format";
-import { requireAuth, getCurrentUserId } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { embedDocuments, isEmbeddingConfigured, serializeVector } from "@/lib/embedding";
+import {
+  parseDocument,
+  DocumentParseError,
+  EncryptedPDFError,
+  ScannedPDFError,
+  CorruptedFileError,
+  UnsupportedFormatError,
+  EmptyContentError,
+  getDocumentTypeFromExtension,
+  DocumentType
+} from "@/lib/documentParser";
 
 const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const CHUNK_SIZE = 500;
 const CHUNK_OVERLAP = 50;
-
-class DocumentParseError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DocumentParseError";
-  }
-}
-
-class EncryptedPDFError extends DocumentParseError {
-  constructor() {
-    super("PDF 文件已加密，无法解析，请提供未加密的文件");
-    this.name = "EncryptedPDFError";
-  }
-}
-
-class ScannedPDFError extends DocumentParseError {
-  constructor() {
-    super("PDF 文件为扫描版（仅图片），无法提取文本，请提供可编辑的 PDF 文档");
-    this.name = "ScannedPDFError";
-  }
-}
-
-class CorruptedFileError extends DocumentParseError {
-  constructor(fileType: string) {
-    super(`${fileType} 文件已损坏，无法解析，请检查文件完整性`);
-    this.name = "CorruptedFileError";
-  }
-}
-
-class UnsupportedFormatError extends DocumentParseError {
-  constructor(format: string) {
-    super(`不支持的文件格式 "${format}"，仅支持 PDF、DOCX、TXT 格式`);
-    this.name = "UnsupportedFormatError";
-  }
-}
-
-class EmptyContentError extends DocumentParseError {
-  constructor(fileType: string) {
-    super(`解析失败:内容为空`);
-    this.name = "EmptyContentError";
-  }
-}
 
 function splitTextIntoChunks(text: string, chunkSize: number = CHUNK_SIZE, overlap: number = CHUNK_OVERLAP): string[] {
   if (!text || text.length === 0) {
@@ -98,172 +67,6 @@ export const DOCUMENT_STATUS = {
 } as const;
 
 export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
-
-async function extractTextFromPDF(filePath: string): Promise<string> {
-  let parser: any = null;
-  
-  try {
-    console.log("开始解析 PDF 文件:", filePath);
-    
-    const dataBuffer = await readFile(filePath);
-    console.log("读取 PDF 文件成功，大小:", dataBuffer.length, "bytes");
-    
-    if (dataBuffer.length === 0) {
-      throw new CorruptedFileError("PDF");
-    }
-    
-    const pdfParseModule = await import("pdf-parse");
-    const { PDFParse, PasswordException, InvalidPDFException, FormatError } = pdfParseModule;
-    
-    parser = new PDFParse({ data: dataBuffer });
-    
-    const result = await parser.getText();
-    const fullText = result.text || "";
-    
-    const infoResult = await parser.getInfo({ parsePageInfo: true });
-    const numPages = infoResult.total || 0;
-    
-    console.log("PDF 解析完成，页数:", numPages);
-    
-    const trimmedText = fullText.trim();
-    console.log("PDF 文本提取完成，长度:", trimmedText.length);
-    
-    if (trimmedText.length < 10) {
-      if (numPages > 0 && trimmedText.length === 0) {
-        throw new ScannedPDFError();
-      }
-      throw new EmptyContentError("PDF");
-    }
-    
-    return fullText;
-  } catch (pdfError) {
-    if (pdfError instanceof DocumentParseError) {
-      throw pdfError;
-    }
-    
-    const pdfParseModule = await import("pdf-parse");
-    const { PasswordException, InvalidPDFException, FormatError } = pdfParseModule;
-    
-    if (pdfError instanceof PasswordException) {
-      throw new EncryptedPDFError();
-    }
-    
-    if (pdfError instanceof InvalidPDFException || pdfError instanceof FormatError) {
-      throw new CorruptedFileError("PDF");
-    }
-    
-    const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
-    
-    if (errorMessage.includes("encrypt") || errorMessage.includes("Encrypt") || errorMessage.includes("password")) {
-      throw new EncryptedPDFError();
-    }
-    
-    if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid") || errorMessage.includes("Invalid")) {
-      throw new CorruptedFileError("PDF");
-    }
-    
-    console.error("PDF 文本提取失败:", pdfError);
-    throw new DocumentParseError(`PDF 解析失败: ${errorMessage}`);
-  } finally {
-    if (parser) {
-      try {
-        await parser.destroy();
-      } catch (e) {
-        console.warn("PDF 解析器销毁失败:", e);
-      }
-    }
-  }
-}
-
-async function extractTextFromDOCX(filePath: string): Promise<string> {
-  try {
-    console.log("开始解析 DOCX 文件:", filePath);
-    
-    const mammothModule = await import("mammoth");
-    const mammoth = mammothModule.default || mammothModule;
-    
-    const dataBuffer = await readFile(filePath);
-    console.log("读取 DOCX 文件成功，大小:", dataBuffer.length, "bytes");
-    
-    if (dataBuffer.length === 0) {
-      throw new CorruptedFileError("DOCX");
-    }
-    
-    if (dataBuffer.length < 4) {
-      throw new CorruptedFileError("DOCX");
-    }
-    
-    const signature = dataBuffer.slice(0, 4).toString("hex");
-    if (signature !== "504b0304") {
-      throw new CorruptedFileError("DOCX");
-    }
-    
-    try {
-      const result = await mammoth.extractRawText({ buffer: dataBuffer });
-      const text = result.value || "";
-      
-      console.log("DOCX 解析完成，文本长度:", text.length);
-      
-      const trimmedText = text.trim();
-      if (trimmedText.length < 10) {
-        console.warn("DOCX 文件解析后文本过短或为空，长度:", trimmedText.length);
-        throw new EmptyContentError("DOCX");
-      }
-      
-      return text;
-    } catch (docxError) {
-      const errorMessage = docxError instanceof Error ? docxError.message : String(docxError);
-      
-      if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid")) {
-        throw new CorruptedFileError("DOCX");
-      }
-      
-      if (errorMessage.includes("password") || errorMessage.includes("encrypt")) {
-        throw new DocumentParseError("DOCX 文件已加密或受保护，无法解析");
-      }
-      
-      throw docxError;
-    }
-  } catch (error) {
-    if (error instanceof DocumentParseError) {
-      throw error;
-    }
-    
-    console.error("DOCX 文本提取失败:", error);
-    const errorMessage = error instanceof Error ? error.message : "未知错误";
-    throw new DocumentParseError(`DOCX 解析失败: ${errorMessage}`);
-  }
-}
-
-async function extractTextFromTXT(filePath: string): Promise<string> {
-  try {
-    console.log("开始解析 TXT 文件:", filePath);
-    
-    const content = await readFile(filePath, "utf-8");
-    
-    console.log("TXT 解析完成，文本长度:", content.length);
-    
-    const trimmedContent = content.trim();
-    if (trimmedContent.length < 10) {
-      console.warn("TXT 文件内容过短或为空，长度:", trimmedContent.length);
-      throw new EmptyContentError("TXT");
-    }
-    
-    return content;
-  } catch (error) {
-    if (error instanceof DocumentParseError) {
-      throw error;
-    }
-    
-    console.error("TXT 文本提取失败:", error);
-    
-    if (error instanceof Error && error.message.includes("encoding")) {
-      throw new DocumentParseError("TXT 文件编码不支持，请使用 UTF-8 编码");
-    }
-    
-    throw new CorruptedFileError("TXT");
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -349,15 +152,16 @@ export async function POST(request: NextRequest) {
     let extractedContent = content || "";
     let parseError: DocumentParseError | null = null;
     let textChunks: string[] = [];
+    let docType: DocumentType | null = null;
 
     try {
-      if (fileExtension === ".pdf") {
-        extractedContent = await extractTextFromPDF(filePath);
-      } else if (fileExtension === ".docx") {
-        extractedContent = await extractTextFromDOCX(filePath);
-      } else if (fileExtension === ".txt") {
-        extractedContent = await extractTextFromTXT(filePath);
-      }
+      docType = getDocumentTypeFromExtension(fileExtension);
+      console.log(`开始解析文档: ${file.name}, 类型: ${docType}`);
+      
+      const parseResult = await parseDocument(filePath, docType);
+      extractedContent = parseResult.text;
+      
+      console.log(`文档解析成功，文本长度: ${extractedContent.length} 字符`);
     } catch (error) {
       if (error instanceof DocumentParseError) {
         parseError = error;
@@ -374,7 +178,7 @@ export async function POST(request: NextRequest) {
       
       if (textChunks.length === 0) {
         console.log(`[RAG 预处理] 文档 "${title}" 切片数量为0`);
-        parseError = new EmptyContentError(fileExtension.substring(1).toUpperCase());
+        parseError = new EmptyContentError(docType?.toUpperCase() || "DOCUMENT");
       }
 
       if (textChunks.length > 0) {

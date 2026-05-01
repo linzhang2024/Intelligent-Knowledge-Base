@@ -712,7 +712,7 @@ export default function DocumentsPage() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {documents.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-gray-50">
+                      <tr key={doc.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="flex-shrink-0 h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
@@ -721,7 +721,7 @@ export default function DocumentsPage() {
                               </span>
                             </div>
                             <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">
+                              <div className="text-sm font-medium text-gray-900 hover:text-indigo-600 transition-colors">
                                 {doc.title}
                               </div>
                               <div className="text-xs text-gray-500">
@@ -755,7 +755,7 @@ export default function DocumentsPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {new Date(doc.createdAt).toLocaleDateString("zh-CN")}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end space-x-2">
                             <button
                               onClick={() => handlePreview(doc)}

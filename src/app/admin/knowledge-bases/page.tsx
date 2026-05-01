@@ -217,21 +217,6 @@ export default function KnowledgeBasesPage() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch("/api/auth/logout", {
-        method: "POST",
-      });
-      if (response.ok) {
-        router.push("/login");
-        router.refresh();
-      }
-    } catch (error) {
-      console.error("登出失败:", error);
-      router.push("/login");
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       {deleteModal.knowledgeBase && (
@@ -331,15 +316,7 @@ export default function KnowledgeBasesPage() {
         </div>
       )}
 
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <BackButton href="/admin" label="返回管理后台" />
-            <h1 className="text-xl font-bold text-gray-900">知识库管理</h1>
-          </div>
-          <NavButtons />
-        </div>
-      </header>
+      <AdminHeader title="知识库管理" backHref="/admin" />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white shadow sm:rounded-lg">

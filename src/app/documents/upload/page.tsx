@@ -657,26 +657,50 @@ export default function UploadPage() {
           </div>
         </form>
 
-        {allDone && successCount > 0 && (
-          <div className="mt-8 bg-green-50 border border-green-200 rounded-lg p-6">
+        {allDone && (
+          <div className={`mt-8 rounded-lg p-6 ${
+            errorCount > 0 
+              ? 'bg-amber-50 border border-amber-200' 
+              : 'bg-green-50 border border-green-200'
+          }`}>
             <div className="flex items-start">
               <div className="flex-shrink-0">
-                <span className="text-green-500 text-3xl">✓</span>
+                <span className={`text-3xl ${errorCount > 0 ? 'text-amber-500' : 'text-green-500'}`}>
+                  {errorCount > 0 ? '⚠' : '✓'}
+                </span>
               </div>
               <div className="ml-4 flex-1">
-                <h3 className="text-lg font-medium text-green-800">上传完成！</h3>
-                <p className="text-sm text-green-600 mt-1">
-                  成功上传 {successCount} 个文档
-                  {errorCount > 0 && <span className="text-red-600"> · {errorCount} 个文档上传失败</span>}
+                <h3 className={`text-lg font-medium ${errorCount > 0 ? 'text-amber-800' : 'text-green-800'}`}>
+                  {errorCount > 0 ? '上传完成（部分失败）' : '上传完成！'}
+                </h3>
+                <p className={`text-sm mt-1 ${errorCount > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                  {successCount > 0 && <span>成功上传 {successCount} 个文档</span>}
+                  {errorCount > 0 && (
+                    <span className={successCount > 0 ? 'ml-2' : ''}>
+                      <span className="text-red-600">{errorCount} 个文档上传失败</span>
+                    </span>
+                  )}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-3">
-                  <Link
-                    href="/chat"
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm"
-                  >
-                    <span className="mr-2">🚀</span>
-                    立即测试问答
-                  </Link>
+                  {successCount > 0 && errorCount === 0 && (
+                    <Link
+                      href="/chat"
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm"
+                    >
+                      <span className="mr-2">🚀</span>
+                      立即测试问答
+                    </Link>
+                  )}
+                  {errorCount > 0 && (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-400 cursor-not-allowed shadow-sm"
+                    >
+                      <span className="mr-2">🚀</span>
+                      立即测试问答（存在失败文件）
+                    </button>
+                  )}
                   <Link
                     href="/dashboard"
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"

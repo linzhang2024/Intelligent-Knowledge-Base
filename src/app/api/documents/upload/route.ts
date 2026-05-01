@@ -102,11 +102,6 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
     console.log("开始解析 PDF 文件:", filePath);
     
-    const pdfjsLibModule = await import("pdfjs-dist");
-    const pdfjsLib = pdfjsLibModule.default || pdfjsLibModule;
-    
-    pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/build/pdf.worker.entry");
-    
     const dataBuffer = await readFile(filePath);
     console.log("读取 PDF 文件成功，大小:", dataBuffer.length, "bytes");
     
@@ -115,27 +110,14 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
     }
     
     try {
-      const loadingTask = pdfjsLib.getDocument({
-        data: new Uint8Array(dataBuffer),
-        useSystemFonts: true,
-      });
+      const pdfParseModule = await import("pdf-parse");
+      const pdfParse = pdfParseModule.default || pdfParseModule;
       
-      const pdfDocument = await loadingTask.promise;
-      const numPages = pdfDocument.numPages;
+      const pdfData = await pdfParse(dataBuffer);
+      const fullText = pdfData.text || "";
+      const numPages = pdfData.numpages || 0;
+      
       console.log("PDF 解析完成，页数:", numPages);
-      
-      let fullText = "";
-      
-      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        const page = await pdfDocument.getPage(pageNum);
-        const textContent = await page.getTextContent();
-        
-        const pageText = textContent.items
-          .map((item: any) => item.str || "")
-          .join(" ");
-        
-        fullText += pageText + "\n";
-      }
       
       const trimmedText = fullText.trim();
       console.log("PDF 文本提取完成，长度:", trimmedText.length);
@@ -343,15 +325,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!parseError) {
-      textChunks = splitTextIntoChunks(extractedContent);
-      console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
-      console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
-      if (textChunks.length > 0) {
-        console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
-      }
-    } else {
-      console.log(`[RAG 预处理] 文档 "${title}" 解析失败，跳过切片和向量化流程`);
+    if (parseError) {
+      console.log(`[RAG 预处理] 文档 "${title}" 解析失败，返回错误: ${parseError.message}`);
+      return NextResponse.json(
+        {
+          message: parseError.message,
+          errorType: parseError.name,
+        },
+        { status: 500 }
+      );
+    }
+
+    textChunks = splitTextIntoChunks(extractedContent);
+    console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
+    console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
+    
+    if (textChunks.length === 0) {
+      console.log(`[RAG 预处理] 文档 "${title}" 切片数量为0，返回错误`);
+      return NextResponse.json(
+        {
+          message: "解析失败:内容为空",
+          errorType: "EmptyContentError",
+        },
+        { status: 500 }
+      );
+    }
+
+    if (textChunks.length > 0) {
+      console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
     }
 
     if (knowledgeBaseId && knowledgeBaseId.trim()) {
@@ -389,22 +390,20 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      if (textChunks.length > 0) {
-        const chunkData = textChunks.map((chunk, index) => ({
-          documentId: newDocument.id,
-          index,
-          content: chunk,
-        }));
+      const chunkData = textChunks.map((chunk, index) => ({
+        documentId: newDocument.id,
+        index,
+        content: chunk,
+      }));
 
-        try {
-          await tx.documentChunk.createMany({
-            data: chunkData,
-          });
-          console.log(`[RAG 存储] 文档 "${title}" 成功存储 ${chunkData.length} 个片段`);
-        } catch (chunkError) {
-          console.error(`[RAG 存储] 文档片段存储失败:`, chunkError);
-          throw chunkError;
-        }
+      try {
+        await tx.documentChunk.createMany({
+          data: chunkData,
+        });
+        console.log(`[RAG 存储] 文档 "${title}" 成功存储 ${chunkData.length} 个片段`);
+      } catch (chunkError) {
+        console.error(`[RAG 存储] 文档片段存储失败:`, chunkError);
+        throw chunkError;
       }
 
       return newDocument;
@@ -413,7 +412,7 @@ export async function POST(request: NextRequest) {
     let embeddingSuccess = false;
     let embeddingError: string | null = null;
 
-    if (textChunks.length > 0 && isEmbeddingConfigured()) {
+    if (isEmbeddingConfigured()) {
       try {
         console.log(`[RAG Embedding] 开始向量化文档 "${title}" 的 ${textChunks.length} 个片段`);
         
@@ -442,7 +441,7 @@ export async function POST(request: NextRequest) {
         embeddingError = error instanceof Error ? error.message : "未知错误";
         console.error(`[RAG Embedding] 向量化失败:`, error);
       }
-    } else if (!isEmbeddingConfigured() && textChunks.length > 0) {
+    } else {
       console.log(`[RAG Embedding] Embedding 服务未配置，跳过向量化`);
     }
 
@@ -452,22 +451,6 @@ export async function POST(request: NextRequest) {
       embeddingSuccess,
       embeddingError,
     };
-
-    if (parseError) {
-      return NextResponse.json(
-        {
-          message: "文档上传成功，但文本解析遇到问题",
-          parseWarning: parseError.message,
-          warningType: parseError.name,
-          document: {
-            ...document,
-            fileSize: document.fileSize?.toString() || null,
-          },
-          rag: ragInfo,
-        },
-        { status: 201 }
-      );
-    }
 
     return NextResponse.json(
       {

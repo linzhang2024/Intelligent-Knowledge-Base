@@ -101,21 +101,6 @@ export default function SettingsPage() {
     }
   }
 
-  const handleLogout = async () => {
-    try {
-      const response = await fetch("/api/auth/logout", {
-        method: "POST",
-      });
-      if (response.ok) {
-        router.push("/login");
-        router.refresh();
-      }
-    } catch (error) {
-      console.error("登出失败:", error);
-      router.push("/login");
-    }
-  };
-
   const handleSave = async () => {
     setSaving(true);
     setSaveMessage(null);
@@ -313,15 +298,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <BackButton href="/admin" label="返回管理后台" />
-            <h1 className="text-xl font-bold text-gray-900">系统设置</h1>
-          </div>
-          <NavButtons />
-        </div>
-      </header>
+      <AdminHeader title="系统设置" backHref="/admin" />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {saveMessage && (

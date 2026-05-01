@@ -94,11 +94,14 @@ export const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
   PUBLISHED: "PUBLISHED",
   ARCHIVED: "ARCHIVED",
+  FAILED: "FAILED",
 } as const;
 
 export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
 
 async function extractTextFromPDF(filePath: string): Promise<string> {
+  let parser: any = null;
+  
   try {
     console.log("开始解析 PDF 文件:", filePath);
     
@@ -109,48 +112,66 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
       throw new CorruptedFileError("PDF");
     }
     
-    try {
-      const pdfParseModule = await import("pdf-parse");
-      const pdfParse = pdfParseModule.default || pdfParseModule;
-      
-      const pdfData = await pdfParse(dataBuffer);
-      const fullText = pdfData.text || "";
-      const numPages = pdfData.numpages || 0;
-      
-      console.log("PDF 解析完成，页数:", numPages);
-      
-      const trimmedText = fullText.trim();
-      console.log("PDF 文本提取完成，长度:", trimmedText.length);
-      
-      if (trimmedText.length < 10) {
-        if (numPages > 0 && trimmedText.length === 0) {
-          throw new ScannedPDFError();
-        }
-        throw new EmptyContentError("PDF");
+    const pdfParseModule = await import("pdf-parse");
+    const { PDFParse, PasswordException, InvalidPDFException, FormatError } = pdfParseModule;
+    
+    parser = new PDFParse({ data: dataBuffer });
+    
+    const result = await parser.getText();
+    const fullText = result.text || "";
+    
+    const infoResult = await parser.getInfo({ parsePageInfo: true });
+    const numPages = infoResult.total || 0;
+    
+    console.log("PDF 解析完成，页数:", numPages);
+    
+    const trimmedText = fullText.trim();
+    console.log("PDF 文本提取完成，长度:", trimmedText.length);
+    
+    if (trimmedText.length < 10) {
+      if (numPages > 0 && trimmedText.length === 0) {
+        throw new ScannedPDFError();
       }
-      
-      return fullText;
-    } catch (pdfError) {
-      const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
-      
-      if (errorMessage.includes("encrypt") || errorMessage.includes("Encrypt") || errorMessage.includes("password")) {
-        throw new EncryptedPDFError();
-      }
-      
-      if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid") || errorMessage.includes("Invalid")) {
-        throw new CorruptedFileError("PDF");
-      }
-      
-      throw pdfError;
-    }
-  } catch (error) {
-    if (error instanceof DocumentParseError) {
-      throw error;
+      throw new EmptyContentError("PDF");
     }
     
-    console.error("PDF 文本提取失败:", error);
-    const errorMessage = error instanceof Error ? error.message : "未知错误";
+    return fullText;
+  } catch (pdfError) {
+    if (pdfError instanceof DocumentParseError) {
+      throw pdfError;
+    }
+    
+    const pdfParseModule = await import("pdf-parse");
+    const { PasswordException, InvalidPDFException, FormatError } = pdfParseModule;
+    
+    if (pdfError instanceof PasswordException) {
+      throw new EncryptedPDFError();
+    }
+    
+    if (pdfError instanceof InvalidPDFException || pdfError instanceof FormatError) {
+      throw new CorruptedFileError("PDF");
+    }
+    
+    const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
+    
+    if (errorMessage.includes("encrypt") || errorMessage.includes("Encrypt") || errorMessage.includes("password")) {
+      throw new EncryptedPDFError();
+    }
+    
+    if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid") || errorMessage.includes("Invalid")) {
+      throw new CorruptedFileError("PDF");
+    }
+    
+    console.error("PDF 文本提取失败:", pdfError);
     throw new DocumentParseError(`PDF 解析失败: ${errorMessage}`);
+  } finally {
+    if (parser) {
+      try {
+        await parser.destroy();
+      } catch (e) {
+        console.warn("PDF 解析器销毁失败:", e);
+      }
+    }
   }
 }
 
@@ -304,57 +325,6 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     await writeFile(filePath, buffer);
 
-    let extractedContent = content || "";
-    let parseError: DocumentParseError | null = null;
-    let textChunks: string[] = [];
-
-    try {
-      if (fileExtension === ".pdf") {
-        extractedContent = await extractTextFromPDF(filePath);
-      } else if (fileExtension === ".docx") {
-        extractedContent = await extractTextFromDOCX(filePath);
-      } else if (fileExtension === ".txt") {
-        extractedContent = await extractTextFromTXT(filePath);
-      }
-    } catch (error) {
-      if (error instanceof DocumentParseError) {
-        parseError = error;
-        console.log("文档解析失败，跳过向量化流程:", error.message);
-      } else {
-        throw error;
-      }
-    }
-
-    if (parseError) {
-      console.log(`[RAG 预处理] 文档 "${title}" 解析失败，返回错误: ${parseError.message}`);
-      return NextResponse.json(
-        {
-          message: parseError.message,
-          errorType: parseError.name,
-        },
-        { status: 500 }
-      );
-    }
-
-    textChunks = splitTextIntoChunks(extractedContent);
-    console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
-    console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
-    
-    if (textChunks.length === 0) {
-      console.log(`[RAG 预处理] 文档 "${title}" 切片数量为0，返回错误`);
-      return NextResponse.json(
-        {
-          message: "解析失败:内容为空",
-          errorType: "EmptyContentError",
-        },
-        { status: 500 }
-      );
-    }
-
-    if (textChunks.length > 0) {
-      console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
-    }
-
     if (knowledgeBaseId && knowledgeBaseId.trim()) {
       const kb = await prisma.knowledgeBase.findUnique({
         where: { id: knowledgeBaseId },
@@ -374,6 +344,71 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
+    }
+
+    let extractedContent = content || "";
+    let parseError: DocumentParseError | null = null;
+    let textChunks: string[] = [];
+
+    try {
+      if (fileExtension === ".pdf") {
+        extractedContent = await extractTextFromPDF(filePath);
+      } else if (fileExtension === ".docx") {
+        extractedContent = await extractTextFromDOCX(filePath);
+      } else if (fileExtension === ".txt") {
+        extractedContent = await extractTextFromTXT(filePath);
+      }
+    } catch (error) {
+      if (error instanceof DocumentParseError) {
+        parseError = error;
+        console.log("文档解析失败:", error.message);
+      } else {
+        throw error;
+      }
+    }
+
+    if (!parseError) {
+      textChunks = splitTextIntoChunks(extractedContent);
+      console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
+      console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
+      
+      if (textChunks.length === 0) {
+        console.log(`[RAG 预处理] 文档 "${title}" 切片数量为0`);
+        parseError = new EmptyContentError(fileExtension.substring(1).toUpperCase());
+      }
+
+      if (textChunks.length > 0) {
+        console.log(`[RAG 预处理] 文档 "${title}" 第一个片段长度: ${textChunks[0].length} 字符`);
+      }
+    }
+
+    if (parseError) {
+      console.log(`[RAG 预处理] 文档 "${title}" 解析失败，创建 FAILED 状态文档`);
+      
+      const failedDocument = await prisma.document.create({
+        data: {
+          title,
+          content: null,
+          fileUrl: `/uploads/${uniqueFileName}`,
+          fileType: fileExtension.substring(1).toUpperCase(),
+          fileSize: BigInt(file.size),
+          status: DOCUMENT_STATUS.FAILED,
+          authorId: currentUserId,
+          knowledgeBaseId: knowledgeBaseId || null,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          message: parseError.message,
+          errorType: parseError.name,
+          document: {
+            ...failedDocument,
+            fileSize: failedDocument.fileSize?.toString() || null,
+          },
+        },
+        { status: 500 }
+      );
     }
 
     const document = await prisma.$transaction(async (tx) => {

@@ -50,7 +50,7 @@ class UnsupportedFormatError extends DocumentParseError {
 
 class EmptyContentError extends DocumentParseError {
   constructor(fileType: string) {
-    super(`解析失败: 内容提取为空。${fileType} 文件可能是扫描版、加密或仅包含图片，请提供可编辑的文本内容文档`);
+    super(`解析失败:内容为空`);
     this.name = "EmptyContentError";
   }
 }
@@ -102,8 +102,10 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
     console.log("开始解析 PDF 文件:", filePath);
     
-    const pdfParseModule = await import("pdf-parse");
-    const pdfParse = pdfParseModule.default || pdfParseModule;
+    const pdfjsLibModule = await import("pdfjs-dist");
+    const pdfjsLib = pdfjsLibModule.default || pdfjsLibModule;
+    
+    pdfjsLib.GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/build/pdf.worker.entry");
     
     const dataBuffer = await readFile(filePath);
     console.log("读取 PDF 文件成功，大小:", dataBuffer.length, "bytes");
@@ -113,25 +115,39 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
     }
     
     try {
-      const pdfData = await pdfParse(dataBuffer);
-      console.log("PDF 解析完成，文本长度:", pdfData.text?.length || 0);
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(dataBuffer),
+        useSystemFonts: true,
+      });
       
-      const text = pdfData.text || "";
+      const pdfDocument = await loadingTask.promise;
+      const numPages = pdfDocument.numPages;
+      console.log("PDF 解析完成，页数:", numPages);
       
-      if (text.trim().length === 0) {
-        const info = pdfData.info;
-        if (info && info.Encrypt) {
-          throw new EncryptedPDFError();
-        }
+      let fullText = "";
+      
+      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        const page = await pdfDocument.getPage(pageNum);
+        const textContent = await page.getTextContent();
         
-        if (pdfData.numpages && pdfData.numpages > 0 && text.length === 0) {
+        const pageText = textContent.items
+          .map((item: any) => item.str || "")
+          .join(" ");
+        
+        fullText += pageText + "\n";
+      }
+      
+      const trimmedText = fullText.trim();
+      console.log("PDF 文本提取完成，长度:", trimmedText.length);
+      
+      if (trimmedText.length < 10) {
+        if (numPages > 0 && trimmedText.length === 0) {
           throw new ScannedPDFError();
         }
-        
         throw new EmptyContentError("PDF");
       }
       
-      return text;
+      return fullText;
     } catch (pdfError) {
       const errorMessage = pdfError instanceof Error ? pdfError.message : String(pdfError);
       
@@ -139,7 +155,7 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
         throw new EncryptedPDFError();
       }
       
-      if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid")) {
+      if (errorMessage.includes("corrupt") || errorMessage.includes("Corrupt") || errorMessage.includes("invalid") || errorMessage.includes("Invalid")) {
         throw new CorruptedFileError("PDF");
       }
       
@@ -185,8 +201,9 @@ async function extractTextFromDOCX(filePath: string): Promise<string> {
       
       console.log("DOCX 解析完成，文本长度:", text.length);
       
-      if (text.trim().length === 0) {
-        console.warn("DOCX 文件解析后文本为空，可能是仅包含图片的文档");
+      const trimmedText = text.trim();
+      if (trimmedText.length < 10) {
+        console.warn("DOCX 文件解析后文本过短或为空，长度:", trimmedText.length);
         throw new EmptyContentError("DOCX");
       }
       
@@ -223,8 +240,9 @@ async function extractTextFromTXT(filePath: string): Promise<string> {
     
     console.log("TXT 解析完成，文本长度:", content.length);
     
-    if (content.trim().length === 0) {
-      console.warn("TXT 文件内容为空");
+    const trimmedContent = content.trim();
+    if (trimmedContent.length < 10) {
+      console.warn("TXT 文件内容过短或为空，长度:", trimmedContent.length);
       throw new EmptyContentError("TXT");
     }
     

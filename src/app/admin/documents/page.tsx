@@ -712,7 +712,7 @@ export default function DocumentsPage() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {documents.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <tr key={doc.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => router.push(`/documents/${doc.id}?from=admin`)}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="flex-shrink-0 h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { formatFileSize, formatDate, formatDateTime } from "@/lib/format";
 import BackButton from "@/components/ui/BackButton";
 
@@ -37,7 +37,12 @@ interface KnowledgeBase {
 
 export default function DocumentDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const documentId = params.id as string;
+  const from = searchParams.get("from");
+
+  const backHref = from === "admin" ? "/admin/documents" : "/dashboard";
+  const backLabel = from === "admin" ? "返回管理后台" : "返回";
 
   const [document, setDocument] = useState<Document | null>(null);
   const [loading, setLoading] = useState(true);
@@ -134,10 +139,10 @@ export default function DocumentDetailPage() {
           <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
             <div className="flex items-center">
               <Link
-                href="/dashboard"
+                href={backHref}
                 className="text-gray-500 hover:text-gray-700 mr-4"
               >
-                ← 返回
+                ← {backLabel}
               </Link>
               <h1 className="text-xl font-bold text-gray-900">文档详情</h1>
             </div>
@@ -150,7 +155,7 @@ export default function DocumentDetailPage() {
               {error || "文档不存在"}
             </h2>
             <Link
-              href="/dashboard"
+              href={backHref}
               className="inline-flex items-center mt-6 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
             >
               返回列表
@@ -172,7 +177,7 @@ export default function DocumentDetailPage() {
       <header className="bg-white shadow sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center space-x-3">
-            <BackButton href="/dashboard" label="返回" />
+            <BackButton href={backHref} label={backLabel} />
             <div>
               <h1 className="text-xl font-bold text-gray-900">{document.title}</h1>
               <div className="flex items-center space-x-4 mt-1">

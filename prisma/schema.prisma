@@ -36,6 +36,7 @@ model KnowledgeBase {
 
   owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   documents     Document[]
+  databaseTables DatabaseTable[]
 
   @@map("knowledge_bases")
 }
@@ -58,6 +59,7 @@ model Document {
   author          User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
   chunks          DocumentChunk[]
+  databaseTables  DatabaseTable[]
 
   @@map("documents")
 }
@@ -156,20 +158,20 @@ model SQLQuery {
   query           String
   queryType       String
   description     String?
-  tables          String[]
-  columns         String[]
-  conditions      String[]
-  groupBys        String[]
-  orderBys        String[]
+  tables          String?
+  columns         String?
+  conditions      String?
+  groupBys        String?
+  orderBys        String?
   having          String?
   limit           Int?
   offset          Int?
   knowledgeBaseId String?
   userId          String?
-  sourceTables    String[]
-  joinConditions  String[]
+  sourceTables    String?
+  joinConditions  String?
   explanation     String?
-  validationErrors String[]
+  validationErrors String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -181,7 +183,7 @@ model QueryHistory {
   userQuery       String
   generatedSQL    String
   explanation     String?
-  tablesUsed      String[]
+  tablesUsed      String?
   executionResult String?
   isSuccess       Boolean   @default(false)
   feedback        String?
@@ -191,4 +193,3 @@ model QueryHistory {
 
   @@map("query_history")
 }
-

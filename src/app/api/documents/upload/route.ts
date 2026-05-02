@@ -15,12 +15,20 @@ import {
   UnsupportedFormatError,
   EmptyContentError,
   getDocumentTypeFromExtension,
-  DocumentType
+  DocumentType,
+  detectSQLDialect,
 } from "@/lib/documentParser";
 import { importSQLFile, SQLImportResult } from "@/lib/sqlParser";
 
-const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "application/sql",
+  "text/sql",
+  "application/x-sql",
+];
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".sql"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const CHUNK_SIZE = 500;
 const CHUNK_OVERLAP = 50;
@@ -108,7 +116,7 @@ export async function POST(request: NextRequest) {
     if (!isMimeTypeAllowed && !isExtensionAllowed) {
       return NextResponse.json(
         { 
-          message: `不支持的文件格式 "${fileExtension}"，仅支持 PDF、DOCX、TXT 格式`,
+          message: `不支持的文件格式 "${fileExtension}"，仅支持 PDF、DOCX、TXT、SQL 格式`,
           errorType: "UNSUPPORTED_FORMAT"
         },
         { status: 400 }
@@ -333,17 +341,28 @@ export async function POST(request: NextRequest) {
       embeddingError,
     };
 
-    return NextResponse.json(
-      {
+    const responseData: any = {
       message: "上传成功",
       document: {
         ...document,
         fileSize: document.fileSize?.toString() || null,
       },
       rag: ragInfo,
-      },
-      { status: 201 }
-    );
+    };
+
+    if (sqlImportResult) {
+      responseData.sqlImport = {
+        success: sqlImportResult.success,
+        tablesImported: sqlImportResult.tablesImported,
+        columnsImported: sqlImportResult.columnsImported,
+        relationsImported: sqlImportResult.relationsImported,
+        errors: sqlImportResult.errors,
+        warnings: sqlImportResult.warnings,
+        tableNames: sqlImportResult.tableNames,
+      };
+    }
+
+    return NextResponse.json(responseData, { status: 201 });
   } catch (error) {
     if (error instanceof DocumentParseError) {
       return NextResponse.json(

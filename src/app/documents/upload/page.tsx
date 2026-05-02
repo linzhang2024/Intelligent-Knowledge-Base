@@ -5,8 +5,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import BackButton from "@/components/ui/BackButton";
 
-const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
+const ALLOWED_TYPES = [
+  "application/pdf", 
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+  "text/plain",
+  "application/sql",
+  "text/sql",
+  "application/x-sql",
+];
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".sql"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 type UploadStage = "idle" | "uploading" | "parsing" | "chunking" | "success" | "error";
@@ -101,7 +108,7 @@ export default function UploadPage() {
     const isExtensionAllowed = ALLOWED_EXTENSIONS.includes(fileExtension);
 
     if (!isMimeTypeAllowed && !isExtensionAllowed) {
-      return { valid: false, error: `不支持的文件格式 "${fileExtension}"，仅支持 PDF、DOCX、TXT 格式` };
+      return { valid: false, error: `不支持的文件格式 "${fileExtension}"，仅支持 PDF、DOCX、TXT、SQL 格式` };
     }
 
     return { valid: true };
@@ -334,6 +341,8 @@ export default function UploadPage() {
         return "📘";
       case "txt":
         return "📄";
+      case "sql":
+        return "🗄️";
       default:
         return "📁";
     }
@@ -446,7 +455,7 @@ export default function UploadPage() {
                 id="file"
                 multiple
                 onChange={handleFileChange}
-                accept=".pdf,.docx,.txt"
+                accept=".pdf,.docx,.txt,.sql"
                 className="hidden"
                 disabled={isUploading}
               />
@@ -459,7 +468,7 @@ export default function UploadPage() {
                 <div className="text-5xl text-gray-400 mb-4">📁</div>
                 <p className="text-sm font-medium text-gray-600">点击选择文件或拖拽文件到此处</p>
                 <p className="text-xs text-gray-400 mt-2">
-                  支持 PDF, DOCX, TXT 格式，单文件最大 10MB，可选择多个文件
+                  支持 PDF, DOCX, TXT, SQL 格式，单文件最大 10MB，可选择多个文件
                 </p>
               </label>
             </div>
@@ -600,6 +609,9 @@ export default function UploadPage() {
                 </li>
                 <li>
                   • <strong>TXT</strong>: 纯文本文件（推荐使用 UTF-8 编码）
+                </li>
+                <li>
+                  • <strong>SQL</strong>: SQL 建表脚本文件（用于导入表结构到知识库）
                 </li>
               </ul>
             </div>

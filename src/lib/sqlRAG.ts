@@ -12,6 +12,20 @@ import {
 
 export { TableMetadata, ColumnMetadata, RelationMetadata };
 
+export class EmptyKnowledgeBaseError extends Error {
+  constructor(message: string = "知识库中没有可用的表结构") {
+    super(message);
+    this.name = "EmptyKnowledgeBaseError";
+  }
+}
+
+export class NoMatchingTablesError extends Error {
+  constructor(message: string = "未找到与需求匹配的表结构") {
+    super(message);
+    this.name = "NoMatchingTablesError";
+  }
+}
+
 const SQL_GENERATION_SYSTEM_PROMPT = `你是一个专业的SQL开发专家，擅长根据业务需求编写高质量的SQL查询语句。
 
 ## 核心原则（必须严格遵守）

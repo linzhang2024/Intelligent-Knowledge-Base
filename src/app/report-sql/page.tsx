@@ -38,6 +38,14 @@ interface SQLGenerationResult {
   confidence: number;
 }
 
+interface ErrorResponse {
+  success: boolean;
+  message: string;
+  tablesAvailable: number;
+  errorType?: string;
+  suggestions?: string[];
+}
+
 interface SSEEvent {
   event: string;
   data: unknown;
@@ -54,10 +62,28 @@ export default function ReportSQLPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [errorResponse, setErrorResponse] = useState<ErrorResponse | null>(null);
   const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("mysql");
+  const [showTooltip, setShowTooltip] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultEndRef = useRef<HTMLDivElement>(null);
+
+  const hasNoTables = tables.length === 0;
+  const isGenerateDisabled = isLoading || !requirement.trim() || hasNoTables;
+
+  const getDisabledReason = (): string => {
+    if (hasNoTables) {
+      if (selectedKbId) {
+        return "当前知识库中暂无 DDL 数据，请先上传 SQL 文件";
+      }
+      return "系统中暂无可用的表结构，请先上传 SQL 文件到知识库";
+    }
+    if (!requirement.trim()) {
+      return "请输入报表需求描述";
+    }
+    return "";
+  };
 
   useEffect(() => {
     const fetchKnowledgeBases = async () => {
@@ -110,9 +136,25 @@ export default function ReportSQLPage() {
       return;
     }
 
+    if (hasNoTables) {
+      setErrorResponse({
+        success: false,
+        message: getDisabledReason(),
+        tablesAvailable: 0,
+        errorType: "EMPTY_KNOWLEDGE_BASE",
+        suggestions: [
+          "前往「文档管理」上传 SQL DDL 文件（CREATE TABLE 语句）",
+          "确保 SQL 文件包含表结构定义（表名、字段名、字段类型、注释）",
+          "上传后系统会自动解析表结构和字段信息",
+        ],
+      });
+      return;
+    }
+
     setIsLoading(true);
     setIsStreaming(true);
     setError(null);
+    setErrorResponse(null);
     setGeneratedResult(null);
     setStreamingContent("");
 
@@ -131,8 +173,14 @@ export default function ReportSQLPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `请求失败: ${response.status}`);
+        const errorData: ErrorResponse = await response.json().catch(() => ({
+          success: false,
+          message: `请求失败: ${response.status}`,
+          tablesAvailable: 0,
+        }));
+        setErrorResponse(errorData);
+        setError(errorData.message);
+        return;
       }
 
       const reader = response.body?.getReader();
@@ -185,11 +233,21 @@ export default function ReportSQLPage() {
                   parseAndSetResult(currentContent);
                   break;
 
-                case "error":
-                  if (typeof dataObj.message === "string") {
-                    throw new Error(dataObj.message);
-                  }
-                  break;
+                case "error": {
+                  const message = typeof dataObj.message === "string" ? dataObj.message : "未知错误";
+                  const errorType = typeof dataObj.errorType === "string" ? dataObj.errorType : "GENERATION_ERROR";
+                  const suggestions = Array.isArray(dataObj.suggestions) ? dataObj.suggestions : undefined;
+
+                  setErrorResponse({
+                    success: false,
+                    message,
+                    tablesAvailable: 0,
+                    errorType,
+                    suggestions,
+                  });
+                  setError(message);
+                  return;
+                }
               }
             } catch (parseError) {
               if (parseError instanceof Error) {
@@ -498,7 +556,55 @@ export default function ReportSQLPage() {
                   </div>
                 </div>
 
-                {error && (
+                {errorResponse && (
+                  <div className={`p-4 rounded-lg border ${
+                    errorResponse.errorType === "EMPTY_KNOWLEDGE_BASE" || errorResponse.errorType === "NO_MATCHING_TABLES"
+                      ? "bg-yellow-50 border-yellow-200"
+                      : "bg-red-50 border-red-200"
+                  }`}>
+                    <div className="flex items-start">
+                      <span className={`mr-2 text-lg ${
+                        errorResponse.errorType === "EMPTY_KNOWLEDGE_BASE" || errorResponse.errorType === "NO_MATCHING_TABLES"
+                          ? "text-yellow-500"
+                          : "text-red-500"
+                      }`}>
+                        {errorResponse.errorType === "EMPTY_KNOWLEDGE_BASE" ? "📭" :
+                         errorResponse.errorType === "NO_MATCHING_TABLES" ? "🔍" : "⚠️"}
+                      </span>
+                      <div className="flex-1">
+                        <p className={`text-sm font-medium ${
+                          errorResponse.errorType === "EMPTY_KNOWLEDGE_BASE" || errorResponse.errorType === "NO_MATCHING_TABLES"
+                            ? "text-yellow-800"
+                            : "text-red-700"
+                        }`}>
+                          {errorResponse.message}
+                        </p>
+                        {errorResponse.suggestions && errorResponse.suggestions.length > 0 && (
+                          <div className="mt-3">
+                            <p className={`text-xs font-medium mb-1 ${
+                              errorResponse.errorType === "EMPTY_KNOWLEDGE_BASE" || errorResponse.errorType === "NO_MATCHING_TABLES"
+                                ? "text-yellow-700"
+                                : "text-red-600"
+                            }`}>
+                              建议步骤：
+                            </p>
+                            <ol className={`list-decimal list-inside text-xs space-y-1 ${
+                              errorResponse.errorType === "EMPTY_KNOWLEDGE_BASE" || errorResponse.errorType === "NO_MATCHING_TABLES"
+                                ? "text-yellow-700"
+                                : "text-red-600"
+                            }`}>
+                              {errorResponse.suggestions.map((suggestion, index) => (
+                                <li key={index}>{suggestion}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {error && !errorResponse && (
                   <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
                     <div className="flex items-center">
                       <span className="text-red-500 mr-2">⚠️</span>
@@ -507,41 +613,65 @@ export default function ReportSQLPage() {
                   </div>
                 )}
 
-                <button
-                  onClick={handleGenerate}
-                  disabled={isLoading || !requirement.trim()}
-                  className="w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <svg
-                        className="animate-spin h-5 w-5"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      {isStreaming ? "生成中..." : "准备中..."}
-                    </>
-                  ) : (
-                    <>
-                      <span>⚡</span>
-                      生成 SQL
-                    </>
+                <div className="relative">
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerateDisabled}
+                    onMouseEnter={() => {
+                      if (isGenerateDisabled && hasNoTables) {
+                        setShowTooltip(true);
+                      }
+                    }}
+                    onMouseLeave={() => setShowTooltip(false)}
+                    className={`w-full px-4 py-3 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 relative ${
+                      isGenerateDisabled
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : "bg-indigo-600 hover:bg-indigo-700"
+                    }`}
+                  >
+                    {isLoading ? (
+                      <>
+                        <svg
+                          className="animate-spin h-5 w-5"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            fill="none"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        {isStreaming ? "生成中..." : "准备中..."}
+                      </>
+                    ) : hasNoTables ? (
+                      <>
+                        <span>📭</span>
+                        暂无可用表结构
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡</span>
+                        生成 SQL
+                      </>
+                    )}
+                  </button>
+
+                  {showTooltip && (
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg shadow-lg whitespace-nowrap z-50">
+                      {getDisabledReason()}
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                    </div>
                   )}
-                </button>
+                </div>
               </div>
             </div>
 

@@ -90,3 +90,105 @@ model SystemConfig {
   @@map("system_configs")
 }
 
+model DatabaseTable {
+  id              String        @id @default(cuid())
+  name            String
+  schemaName      String?
+  tableComment    String?
+  databaseName    String?
+  knowledgeBaseId String?
+  documentId      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  columns         TableColumn[]
+  relationsFrom   TableRelation[] @relation("RelationFromTable")
+  relationsTo     TableRelation[] @relation("RelationToTable")
+  knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
+  document        Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@unique([name, schemaName, databaseName, knowledgeBaseId])
+  @@map("database_tables")
+}
+
+model TableColumn {
+  id              String    @id @default(cuid())
+  tableId         String
+  name            String
+  dataType        String
+  columnType      String?
+  isNullable      Boolean   @default(true)
+  isPrimaryKey    Boolean   @default(false)
+  isAutoIncrement Boolean   @default(false)
+  defaultValue    String?
+  columnComment   String?
+  ordinalPosition Int
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  table           DatabaseTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, name])
+  @@map("table_columns")
+}
+
+model TableRelation {
+  id              String    @id @default(cuid())
+  fromTableId     String
+  fromColumnName  String
+  toTableId       String
+  toColumnName    String
+  relationType    String    @default("ONE_TO_MANY")
+  constraintName  String?
+  joinCondition   String?
+  knowledgeBaseId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  fromTable       DatabaseTable @relation("RelationFromTable", fields: [fromTableId], references: [id], onDelete: Cascade)
+  toTable         DatabaseTable @relation("RelationToTable", fields: [toTableId], references: [id], onDelete: Cascade)
+
+  @@map("table_relations")
+}
+
+model SQLQuery {
+  id              String    @id @default(cuid())
+  query           String
+  queryType       String
+  description     String?
+  tables          String[]
+  columns         String[]
+  conditions      String[]
+  groupBys        String[]
+  orderBys        String[]
+  having          String?
+  limit           Int?
+  offset          Int?
+  knowledgeBaseId String?
+  userId          String?
+  sourceTables    String[]
+  joinConditions  String[]
+  explanation     String?
+  validationErrors String[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("sql_queries")
+}
+
+model QueryHistory {
+  id              String    @id @default(cuid())
+  userQuery       String
+  generatedSQL    String
+  explanation     String?
+  tablesUsed      String[]
+  executionResult String?
+  isSuccess       Boolean   @default(false)
+  feedback        String?
+  knowledgeBaseId String?
+  userId          String?
+  createdAt       DateTime  @default(now())
+
+  @@map("query_history")
+}
+

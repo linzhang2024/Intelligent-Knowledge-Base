@@ -12,11 +12,13 @@ import {
 import { pdfParser } from "./pdfParser";
 import { docxParser } from "./docxParser";
 import { txtParser } from "./txtParser";
+import { sqlParser, detectSQLDialect } from "./sqlParser";
 
 const parsers: Record<DocumentType, Parser> = {
   pdf: pdfParser,
   docx: docxParser,
   txt: txtParser,
+  sql: sqlParser,
 };
 
 function getParser(fileType: DocumentType): Parser {
@@ -32,6 +34,7 @@ export function getDocumentTypeFromExtension(extension: string): DocumentType {
   if (ext === "pdf") return "pdf";
   if (ext === "docx") return "docx";
   if (ext === "txt") return "txt";
+  if (ext === "sql") return "sql";
   throw new UnsupportedFormatError(extension);
 }
 
@@ -41,6 +44,8 @@ export function getDocumentTypeFromMimeType(mimeType: string): DocumentType | nu
   if (type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     return "docx";
   if (type === "text/plain") return "txt";
+  if (type === "application/sql" || type === "text/sql" || type === "application/x-sql")
+    return "sql";
   return null;
 }
 
@@ -72,6 +77,10 @@ export async function extractTextFromTXT(filePath: string): Promise<string> {
   return txtParser.parse(filePath);
 }
 
+export async function extractTextFromSQL(filePath: string): Promise<string> {
+  return sqlParser.parse(filePath);
+}
+
 export function validatePDFHeader(buffer: Buffer): boolean {
   if (buffer.length < 5) {
     return false;
@@ -87,6 +96,8 @@ export {
   CorruptedFileError,
   UnsupportedFormatError,
   EmptyContentError,
+  sqlParser,
+  detectSQLDialect,
 };
 
 export type { DocumentType, ParseResult };

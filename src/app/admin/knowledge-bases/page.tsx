@@ -43,7 +43,7 @@ export default function KnowledgeBasesPage() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 10,
+    limit: 12,
     total: 0,
     totalPages: 0,
   });
@@ -71,7 +71,7 @@ export default function KnowledgeBasesPage() {
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: "10",
+        limit: "12",
       });
       if (searchQuery) {
         params.append("search", searchQuery);
@@ -161,21 +161,15 @@ export default function KnowledgeBasesPage() {
         throw new Error(data.message || "删除失败");
       }
 
-      const newKnowledgeBases = knowledgeBases.filter((kb) => kb.id !== kbId);
-      setKnowledgeBases(newKnowledgeBases);
+      const remainingOnPage = knowledgeBases.filter((kb) => kb.id !== kbId);
       
-      const newTotal = pagination.total - 1;
-      const newTotalPages = Math.ceil(newTotal / pagination.limit);
-      
-      setPagination((prev) => ({
-        ...prev,
-        total: newTotal,
-        totalPages: newTotalPages,
-      }));
-
-      if (newKnowledgeBases.length === 0 && pagination.page > 1) {
+      if (remainingOnPage.length === 0 && pagination.page > 1) {
+        const newTotal = pagination.total - 1;
+        const newTotalPages = Math.ceil(newTotal / pagination.limit);
         const newPage = Math.min(pagination.page - 1, newTotalPages);
         fetchKnowledgeBases(newPage, search);
+      } else {
+        fetchKnowledgeBases(pagination.page, search);
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : "删除失败");

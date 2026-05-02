@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import AppHeader from "@/components/ui/AppHeader";
 
 interface KnowledgeBase {
   id: string;
@@ -403,65 +404,24 @@ export default function ReportSQLPage() {
     ? ""
     : generatedResult?.explanation || "";
 
+  const leftActions = (
+    <button
+      onClick={clearAll}
+      className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
+      disabled={isLoading}
+    >
+      <span className="mr-2">🗑️</span>
+      清空
+    </button>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link
-                href="/dashboard"
-                className="text-xl font-bold text-gray-900 hover:text-indigo-600"
-              >
-                智能知识库
-              </Link>
-              <span className="text-gray-300">|</span>
-              <div className="flex items-center space-x-2">
-                <Link
-                  href="/chat"
-                  className="text-sm text-gray-600 hover:text-indigo-600 px-3 py-1 rounded-md hover:bg-gray-100"
-                >
-                  💬 智能问答
-                </Link>
-                <span className="text-sm font-medium text-indigo-600 px-3 py-1 bg-indigo-50 rounded-md">
-                  📊 报表SQL
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={clearAll}
-                className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
-                disabled={isLoading}
-              >
-                <span className="mr-2">🗑️</span>
-                清空
-              </button>
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
-              >
-                <svg
-                  className="mr-2"
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  <polyline points="9 22 9 12 15 12 15 22" />
-                </svg>
-                工作台
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        activePage="report-sql"
+        leftActions={leftActions}
+        showDashboardLink={true}
+      />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">

@@ -161,12 +161,22 @@ export default function KnowledgeBasesPage() {
         throw new Error(data.message || "删除失败");
       }
 
-      setKnowledgeBases((prev) => prev.filter((kb) => kb.id !== kbId));
+      const newKnowledgeBases = knowledgeBases.filter((kb) => kb.id !== kbId);
+      setKnowledgeBases(newKnowledgeBases);
+      
+      const newTotal = pagination.total - 1;
+      const newTotalPages = Math.ceil(newTotal / pagination.limit);
+      
       setPagination((prev) => ({
         ...prev,
-        total: prev.total - 1,
-        totalPages: Math.ceil((prev.total - 1) / prev.limit),
+        total: newTotal,
+        totalPages: newTotalPages,
       }));
+
+      if (newKnowledgeBases.length === 0 && pagination.page > 1) {
+        const newPage = Math.min(pagination.page - 1, newTotalPages);
+        fetchKnowledgeBases(newPage, search);
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : "删除失败");
     } finally {
@@ -394,36 +404,38 @@ export default function KnowledgeBasesPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 auto-rows-fr">
                 {knowledgeBases.map((kb) => (
-                  <div key={kb.id} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+                  <div key={kb.id} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow flex flex-col">
                     <div className="flex items-center justify-between mb-4">
                       <div className="text-2xl">📚</div>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 whitespace-nowrap">
                         {kb.documentCount} 文档
                       </span>
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">{kb.name}</h3>
-                    <p className="text-sm text-gray-500 mb-2">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2 truncate" title={kb.name}>{kb.name}</h3>
+                    <p className="text-sm text-gray-500 mb-2 truncate" title={kb.owner?.name || kb.owner?.email || "--"}>
                       所有者: {kb.owner?.name || kb.owner?.email || "--"}
                     </p>
-                    {kb.description && (
-                      <p className="text-xs text-gray-400 mb-4 line-clamp-2">{kb.description}</p>
-                    )}
+                    <div className="flex-1 min-h-0">
+                      {kb.description && (
+                        <p className="text-xs text-gray-400 mb-2 line-clamp-2">{kb.description}</p>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-400 mb-4">
                       创建于 {new Date(kb.createdAt).toLocaleDateString("zh-CN")}
                     </p>
-                    <div className="mt-4 flex space-x-2">
+                    <div className="mt-auto flex space-x-2">
                       <button
                         onClick={() => {}}
-                        className="flex-1 text-sm text-indigo-600 hover:text-indigo-900 py-2 border border-indigo-600 rounded"
+                        className="flex-1 text-sm text-indigo-600 hover:text-indigo-900 py-2 border border-indigo-600 rounded transition-colors"
                       >
                         编辑
                       </button>
                       <button
                         onClick={() => handleDeleteClick(kb)}
                         disabled={actionLoading === kb.id || kb.documentCount > 0}
-                        className="flex-1 text-sm text-red-600 hover:text-red-900 py-2 border border-red-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 text-sm text-red-600 hover:text-red-900 py-2 border border-red-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         删除
                       </button>

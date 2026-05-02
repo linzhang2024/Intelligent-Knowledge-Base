@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
 import AppHeader from "@/components/ui/AppHeader";
 
 interface KnowledgeBase {
@@ -404,23 +403,16 @@ export default function ReportSQLPage() {
     ? ""
     : generatedResult?.explanation || "";
 
-  const leftActions = (
-    <button
-      onClick={clearAll}
-      className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
-      disabled={isLoading}
-    >
-      <span className="mr-2">🗑️</span>
-      清空
-    </button>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <AppHeader
         activePage="report-sql"
-        leftActions={leftActions}
+        showTabs={true}
         showDashboardLink={true}
+        reportSqlPageActions={{
+          onClear: clearAll,
+          isLoading: isLoading,
+        }}
       />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">

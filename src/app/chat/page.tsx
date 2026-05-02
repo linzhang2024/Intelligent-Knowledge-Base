@@ -260,32 +260,16 @@ export default function ChatPage() {
     return `${(similarity * 100).toFixed(1)}%`;
   };
 
-  const leftActions = (
-    <>
-      <button
-        onClick={clearChat}
-        className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
-        disabled={isLoading}
-      >
-        <span className="mr-2">🗑️</span>
-        清空对话
-      </button>
-      <Link
-        href="/documents/upload"
-        className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-colors duration-200"
-      >
-        <span className="mr-2">📄</span>
-        上传文档
-      </Link>
-    </>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <AppHeader
         activePage="chat"
-        leftActions={leftActions}
+        showTabs={true}
         showDashboardLink={true}
+        chatPageActions={{
+          onClearChat: clearChat,
+          isLoading: isLoading,
+        }}
       />
 
       <main className="flex-1 flex max-w-6xl mx-auto w-full">

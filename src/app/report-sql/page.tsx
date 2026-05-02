@@ -1,0 +1,809 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
+
+interface KnowledgeBase {
+  id: string;
+  name: string;
+  description: string | null;
+  documentCount: number;
+}
+
+interface TableInfo {
+  id: string;
+  name: string;
+  schemaName: string | null;
+  tableComment: string | null;
+  columnCount: number;
+  relationCount: number;
+  columns: ColumnInfo[];
+}
+
+interface ColumnInfo {
+  id: string;
+  name: string;
+  dataType: string;
+  isNullable: boolean;
+  isPrimaryKey: boolean;
+  columnComment: string | null;
+}
+
+interface SQLGenerationResult {
+  sql: string;
+  explanation: string;
+  warnings: string[];
+  tablesUsed: string[];
+  columnsUsed: string[];
+  confidence: number;
+}
+
+interface SSEEvent {
+  event: string;
+  data: unknown;
+}
+
+export default function ReportSQLPage() {
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [selectedKbId, setSelectedKbId] = useState<string>("");
+  const [requirement, setRequirement] = useState("");
+  const [tables, setTables] = useState<TableInfo[]>([]);
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
+  const [generatedResult, setGeneratedResult] = useState<SQLGenerationResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("mysql");
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resultEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchKnowledgeBases = async () => {
+      try {
+        const response = await fetch("/api/kb");
+        if (response.ok) {
+          const data = await response.json();
+          setKnowledgeBases(data.knowledgeBases || []);
+        }
+      } catch (err) {
+        console.error("获取知识库列表失败:", err);
+      }
+    };
+
+    fetchKnowledgeBases();
+  }, []);
+
+  useEffect(() => {
+    loadTables();
+  }, [selectedKbId]);
+
+  const loadTables = async () => {
+    try {
+      const url = selectedKbId
+        ? `/api/sql/tables?knowledgeBaseId=${encodeURIComponent(selectedKbId)}`
+        : "/api/sql/tables";
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.success) {
+        setTables(data.tables);
+      }
+    } catch (err) {
+      console.error("加载表结构失败:", err);
+    }
+  };
+
+  const exampleRequirements = [
+    "查询订单表中金额大于1000的订单，按创建时间降序排列",
+    "统计每个用户的订单数量和总金额，按订单数降序排列",
+    "查询本月的订单，关联用户表获取用户姓名和电话",
+    "统计每个月的销售额，包含订单数和平均金额",
+    "查询最近30天内注册的用户及其订单统计",
+  ];
+
+  const handleGenerate = async () => {
+    if (!requirement.trim()) {
+      setError("请输入报表需求");
+      return;
+    }
+
+    setIsLoading(true);
+    setIsStreaming(true);
+    setError(null);
+    setGeneratedResult(null);
+    setStreamingContent("");
+
+    try {
+      const response = await fetch("/api/qa/sql", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requirement: requirement.trim(),
+          knowledgeBaseId: selectedKbId || undefined,
+          dialect,
+          streaming: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `请求失败: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error("无法读取响应流");
+      }
+
+      let currentContent = "";
+      let buffer = "";
+      let currentEvent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7);
+            continue;
+          }
+
+          if (line.startsWith("data: ")) {
+            try {
+              const dataStr = line.slice(6);
+              const dataObj = JSON.parse(dataStr) as Record<string, unknown>;
+
+              switch (currentEvent) {
+                case "info":
+                  console.log("[SQL生成] 信息:", dataObj.message);
+                  break;
+
+                case "content":
+                  if (typeof dataObj.content === "string") {
+                    currentContent += dataObj.content;
+                    setStreamingContent(currentContent);
+                  }
+                  break;
+
+                case "done":
+                  setIsStreaming(false);
+                  parseAndSetResult(currentContent);
+                  break;
+
+                case "error":
+                  if (typeof dataObj.message === "string") {
+                    throw new Error(dataObj.message);
+                  }
+                  break;
+              }
+            } catch (parseError) {
+              if (parseError instanceof Error) {
+                throw parseError;
+              }
+            }
+            continue;
+          }
+
+          if (line === "") {
+            currentEvent = "";
+            continue;
+          }
+        }
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "未知错误";
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+      setIsStreaming(false);
+    }
+  };
+
+  const parseAndSetResult = (content: string) => {
+    const sqlMatch = content.match(/【SQL查询】\s*```sql\s*([\s\S]*?)\s*```/i);
+    const sql = sqlMatch ? sqlMatch[1].trim() : extractSQLFromContent(content);
+
+    const explanationMatch = content.match(/【逻辑解释】([\s\S]*?)(?=【注意事项】|$)/i);
+    const explanation = explanationMatch
+      ? explanationMatch[1].trim()
+      : "AI 已完成SQL生成，详情请查看生成的SQL语句。";
+
+    const warnings: string[] = [];
+    const notesMatch = content.match(/【注意事项】([\s\S]*)$/i);
+    if (notesMatch) {
+      const notes = notesMatch[1].trim();
+      if (notes) {
+        warnings.push(notes);
+      }
+    }
+
+    const tablesUsed = extractTablesFromSQL(sql);
+
+    let confidence = 0.7;
+    if (warnings.length === 0 && sql.length > 0) {
+      confidence = 0.9;
+    } else if (warnings.some((w) => w.includes("缺失") || w.includes("未找到"))) {
+      confidence = 0.5;
+    }
+
+    setGeneratedResult({
+      sql,
+      explanation,
+      warnings,
+      tablesUsed,
+      columnsUsed: [],
+      confidence,
+    });
+  };
+
+  const extractSQLFromContent = (content: string): string => {
+    const codeBlockMatch = content.match(/```sql\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch) {
+      return codeBlockMatch[1].trim();
+    }
+
+    const simpleCodeMatch = content.match(/```\s*([\s\S]*?)\s*```/i);
+    if (simpleCodeMatch) {
+      return simpleCodeMatch[1].trim();
+    }
+
+    const lines = content.split("\n");
+    const sqlLines: string[] = [];
+    let inSQL = false;
+
+    for (const line of lines) {
+      const upperLine = line.trim().toUpperCase();
+      if (
+        upperLine.startsWith("SELECT") ||
+        upperLine.startsWith("WITH") ||
+        upperLine.startsWith("INSERT") ||
+        upperLine.startsWith("UPDATE") ||
+        upperLine.startsWith("DELETE")
+      ) {
+        inSQL = true;
+      }
+      if (inSQL) {
+        sqlLines.push(line);
+      }
+    }
+
+    return sqlLines.join("\n").trim();
+  };
+
+  const extractTablesFromSQL = (sql: string): string[] => {
+    const tables: string[] = [];
+    const fromMatch = sql.match(/FROM\s+`?([a-zA-Z_][a-zA-Z0-9_]*)`?/i);
+    if (fromMatch) {
+      tables.push(fromMatch[1]);
+    }
+
+    const joinMatches = sql.match(/JOIN\s+`?([a-zA-Z_][a-zA-Z0-9_]*)`?/gi);
+    if (joinMatches) {
+      for (const match of joinMatches) {
+        const tableMatch = match.match(/JOIN\s+`?([a-zA-Z_][a-zA-Z0-9_]*)`?/i);
+        if (tableMatch && !tables.includes(tableMatch[1])) {
+          tables.push(tableMatch[1]);
+        }
+      }
+    }
+
+    return tables;
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleGenerate();
+    }
+  };
+
+  const handleCopySQL = () => {
+    if (generatedResult?.sql) {
+      navigator.clipboard.writeText(generatedResult.sql);
+    }
+  };
+
+  const toggleTable = (tableName: string) => {
+    setExpandedTable(expandedTable === tableName ? null : tableName);
+  };
+
+  const loadExample = (example: string) => {
+    setRequirement(example);
+  };
+
+  const clearAll = () => {
+    setRequirement("");
+    setGeneratedResult(null);
+    setStreamingContent("");
+    setError(null);
+  };
+
+  useEffect(() => {
+    resultEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [streamingContent, generatedResult]);
+
+  const displaySQL = isStreaming
+    ? extractSQLFromContent(streamingContent) || streamingContent
+    : generatedResult?.sql || "";
+
+  const displayExplanation = isStreaming
+    ? ""
+    : generatedResult?.explanation || "";
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Link
+                href="/dashboard"
+                className="text-xl font-bold text-gray-900 hover:text-indigo-600"
+              >
+                智能知识库
+              </Link>
+              <span className="text-gray-300">|</span>
+              <div className="flex items-center space-x-2">
+                <Link
+                  href="/chat"
+                  className="text-sm text-gray-600 hover:text-indigo-600 px-3 py-1 rounded-md hover:bg-gray-100"
+                >
+                  💬 智能问答
+                </Link>
+                <span className="text-sm font-medium text-indigo-600 px-3 py-1 bg-indigo-50 rounded-md">
+                  📊 报表SQL
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={clearAll}
+                className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
+                disabled={isLoading}
+              >
+                <span className="mr-2">🗑️</span>
+                清空
+              </button>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
+              >
+                <svg
+                  className="mr-2"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                工作台
+              </Link>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                <span className="mr-2">✍️</span>
+                报表需求
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                请描述您需要的报表，AI 将根据知识库中的表结构生成 SQL
+              </p>
+            </div>
+
+            <div className="flex-1 p-6 overflow-y-auto">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      选择知识库
+                    </label>
+                    <select
+                      value={selectedKbId}
+                      onChange={(e) => setSelectedKbId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                    >
+                      <option value="">全部知识库</option>
+                      {knowledgeBases.map((kb) => (
+                        <option key={kb.id} value={kb.id}>
+                          {kb.name} ({kb.documentCount} 文档)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      SQL 方言
+                    </label>
+                    <select
+                      value={dialect}
+                      onChange={(e) =>
+                        setDialect(
+                          e.target.value as "mysql" | "postgresql" | "sqlite" | "mssql" | "oracle"
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                    >
+                      <option value="mysql">MySQL</option>
+                      <option value="postgresql">PostgreSQL</option>
+                      <option value="sqlite">SQLite</option>
+                      <option value="mssql">SQL Server</option>
+                      <option value="oracle">Oracle</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    需求描述
+                  </label>
+                  <textarea
+                    ref={textareaRef}
+                    value={requirement}
+                    onChange={(e) => setRequirement(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="例如：查询订单表中金额大于1000的订单，按创建时间降序排列，关联用户表获取用户姓名"
+                    rows={8}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-sm"
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-gray-400 mt-2">
+                    按 Ctrl + Enter 快速生成
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    示例需求（点击使用）
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {exampleRequirements.map((example, index) => (
+                      <button
+                        key={index}
+                        onClick={() => loadExample(example)}
+                        disabled={isLoading}
+                        className="text-sm px-3 py-1.5 bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-full text-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {example.substring(0, 18)}...
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center">
+                      <span className="text-red-500 mr-2">⚠️</span>
+                      <span className="text-sm text-red-700">{error}</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleGenerate}
+                  disabled={isLoading || !requirement.trim()}
+                  className="w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <svg
+                        className="animate-spin h-5 w-5"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      {isStreaming ? "生成中..." : "准备中..."}
+                    </>
+                  ) : (
+                    <>
+                      <span>⚡</span>
+                      生成 SQL
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200">
+              <div className="px-6 py-4">
+                <h3 className="text-sm font-medium text-gray-900 flex items-center mb-3">
+                  <span className="mr-2">📋</span>
+                  可用表结构 ({tables.length})
+                </h3>
+                {tables.length === 0 ? (
+                  <div className="text-center py-4 text-gray-500 text-sm">
+                    <p>暂无可用的表结构</p>
+                    <p className="text-xs mt-1">请先导入 SQL 文件到知识库</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {tables.map((table) => (
+                      <div
+                        key={table.id}
+                        className="border border-gray-200 rounded-lg overflow-hidden"
+                      >
+                        <button
+                          onClick={() => toggleTable(table.name)}
+                          className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center justify-between text-sm"
+                        >
+                          <div>
+                            <span className="font-medium text-gray-900">
+                              {table.name}
+                            </span>
+                            {table.tableComment && (
+                              <span className="text-gray-500 text-xs ml-2">
+                                ({table.tableComment})
+                              </span>
+                            )}
+                            <span className="text-gray-400 text-xs ml-2">
+                              {table.columnCount} 列
+                            </span>
+                          </div>
+                          <svg
+                            className={`w-4 h-4 text-gray-400 transition-transform ${expandedTable === table.name ? "rotate-180" : ""}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 9l-7 7-7-7"
+                            />
+                          </svg>
+                        </button>
+
+                        {expandedTable === table.name && (
+                          <div className="px-3 py-2 bg-gray-50 border-t border-gray-200">
+                            <div className="space-y-1">
+                              {table.columns.map((col) => (
+                                <div
+                                  key={col.id}
+                                  className="text-xs flex items-center gap-2"
+                                >
+                                  {col.isPrimaryKey && (
+                                    <span className="text-yellow-600">🔑</span>
+                                  )}
+                                  <span
+                                    className={`font-mono ${col.isPrimaryKey ? "text-yellow-700" : "text-gray-700"}`}
+                                  >
+                                    {col.name}
+                                  </span>
+                                  <span className="text-gray-400">
+                                    {col.dataType}
+                                  </span>
+                                  {col.columnComment && (
+                                    <span className="text-gray-500 ml-auto">
+                                      {col.columnComment}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 bg-blue-50 border-t border-blue-100 rounded-b-xl">
+                <h4 className="text-sm font-medium text-blue-900 mb-2">
+                  💡 使用提示
+                </h4>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• 描述需求时尽量明确涉及的表和筛选条件</li>
+                  <li>• 如"统计每个用户的订单数量和总金额"</li>
+                  <li>• AI 会严格使用知识库中的真实字段名</li>
+                  <li>• 如果缺少必要字段，AI 会明确提示</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <span className="mr-2">📝</span>
+                  生成结果
+                </h2>
+                {generatedResult && (
+                  <div className="flex items-center gap-4 mt-1">
+                    <span className="text-sm text-gray-500">
+                      置信度:{" "}
+                      <span
+                        className={`font-medium ${
+                          generatedResult.confidence >= 0.8
+                            ? "text-green-600"
+                            : generatedResult.confidence >= 0.6
+                            ? "text-yellow-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {(generatedResult.confidence * 100).toFixed(0)}%
+                      </span>
+                    </span>
+                    {generatedResult.tablesUsed.length > 0 && (
+                      <span className="text-sm text-gray-500">
+                        涉及表: {generatedResult.tablesUsed.join(", ")}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              {displaySQL && (
+                <button
+                  onClick={handleCopySQL}
+                  className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                >
+                  <span className="mr-2">📋</span>
+                  复制 SQL
+                </button>
+              )}
+            </div>
+
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {!displaySQL && !isLoading ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <div className="text-6xl mb-4">🤖</div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                    等待生成 SQL
+                  </h3>
+                  <p className="text-gray-500 max-w-md">
+                    在左侧输入报表需求描述，点击"生成 SQL"按钮，
+                    AI 将基于知识库中的表结构为您生成准确的 SQL 语句。
+                  </p>
+                  <div className="mt-6 p-4 bg-gray-50 rounded-lg max-w-md text-sm text-gray-600">
+                    <p className="font-medium mb-2">示例需求：</p>
+                    <ul className="space-y-1 text-left">
+                      <li>• 查询订单表中金额大于1000的订单</li>
+                      <li>• 统计每个用户的订单数量和总金额</li>
+                      <li>• 查询本月订单并关联用户信息</li>
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 overflow-y-auto p-6">
+                    {isStreaming && (
+                      <div className="mb-4 flex items-center">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 animate-pulse">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                          正在生成...
+                        </span>
+                      </div>
+                    )}
+
+                    {displaySQL && (
+                      <div className="mb-6">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          SQL 语句
+                        </h4>
+                        <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm whitespace-pre-wrap font-mono">
+                          {displaySQL}
+                          {isStreaming && (
+                            <span className="inline-block w-2 h-4 bg-green-400 animate-pulse ml-1"></span>
+                          )}
+                        </pre>
+                      </div>
+                    )}
+
+                    {displayExplanation && (
+                      <div className="mb-6">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">
+                          📖 逻辑解释
+                        </h4>
+                        <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg">
+                          {displayExplanation}
+                        </div>
+                      </div>
+                    )}
+
+                    {generatedResult?.warnings &&
+                      generatedResult.warnings.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-medium text-yellow-800 mb-2">
+                            ⚠️ 注意事项
+                          </h4>
+                          <div className="space-y-2">
+                            {generatedResult.warnings.map((warning, index) => (
+                              <div
+                                key={index}
+                                className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800"
+                              >
+                                {warning}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+
+                  {generatedResult &&
+                    generatedResult.tablesUsed.length > 0 && (
+                      <div className="border-t border-gray-200 p-6">
+                        <h4 className="text-sm font-medium text-gray-700 mb-3">
+                          📊 统计信息
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="p-3 bg-blue-50 rounded-lg text-center">
+                            <div className="text-xs text-gray-500">涉及表数</div>
+                            <div className="text-lg font-semibold text-blue-700">
+                              {generatedResult.tablesUsed.length}
+                            </div>
+                          </div>
+                          <div className="p-3 bg-green-50 rounded-lg text-center">
+                            <div className="text-xs text-gray-500">置信度</div>
+                            <div className="text-lg font-semibold text-green-700">
+                              {(generatedResult.confidence * 100).toFixed(0)}%
+                            </div>
+                          </div>
+                          <div className="p-3 bg-purple-50 rounded-lg text-center">
+                            <div className="text-xs text-gray-500">SQL 长度</div>
+                            <div className="text-lg font-semibold text-purple-700">
+                              {generatedResult.sql.length} 字符
+                            </div>
+                          </div>
+                          <div className="p-3 bg-orange-50 rounded-lg text-center">
+                            <div className="text-xs text-gray-500">警告数</div>
+                            <div className="text-lg font-semibold text-orange-700">
+                              {generatedResult.warnings.length}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                </>
+              )}
+              <div ref={resultEndRef} />
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

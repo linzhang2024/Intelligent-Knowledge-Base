@@ -1,4 +1,4 @@
-export type DocumentType = "pdf" | "docx" | "txt";
+export type DocumentType = "pdf" | "docx" | "txt" | "sql";
 
 export interface ParseResult {
   text: string;

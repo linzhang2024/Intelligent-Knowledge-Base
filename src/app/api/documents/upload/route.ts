@@ -17,6 +17,7 @@ import {
   getDocumentTypeFromExtension,
   DocumentType
 } from "@/lib/documentParser";
+import { importSQLFile, SQLImportResult } from "@/lib/sqlParser";
 
 const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"];
@@ -250,6 +251,47 @@ export async function POST(request: NextRequest) {
 
     let embeddingSuccess = false;
     let embeddingError: string | null = null;
+    let sqlImportResult: SQLImportResult | null = null;
+
+    const isSQLFile = fileExtension.toLowerCase() === ".sql" || docType === "sql";
+
+    if (isSQLFile && extractedContent) {
+      try {
+        console.log(`[SQL导入] 检测到SQL文件，开始解析表结构: "${title}"`);
+        
+        const dialect = detectSQLDialect(extractedContent);
+        console.log(`[SQL导入] 检测到的SQL方言: ${dialect}`);
+        
+        sqlImportResult = await importSQLFile(extractedContent, {
+          knowledgeBaseId: knowledgeBaseId || undefined,
+          documentId: document.id,
+          userId: currentUserId,
+          overwriteExisting: false,
+          inferRelations: true,
+          dialect: dialect,
+        });
+
+        console.log(`[SQL导入] 导入完成: 表=${sqlImportResult.tablesImported}, 字段=${sqlImportResult.columnsImported}, 关系=${sqlImportResult.relationsImported}`);
+        
+        if (sqlImportResult.warnings.length > 0) {
+          console.log(`[SQL导入] 警告: ${sqlImportResult.warnings.join(", ")}`);
+        }
+        if (sqlImportResult.errors.length > 0) {
+          console.log(`[SQL导入] 错误: ${sqlImportResult.errors.join(", ")}`);
+        }
+      } catch (error) {
+        console.error(`[SQL导入] 导入失败:`, error);
+        sqlImportResult = {
+          success: false,
+          tablesImported: 0,
+          columnsImported: 0,
+          relationsImported: 0,
+          errors: [error instanceof Error ? error.message : "未知错误"],
+          warnings: [],
+          tableNames: [],
+        };
+      }
+    }
 
     if (isEmbeddingConfigured()) {
       try {
@@ -293,12 +335,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        message: "上传成功",
-        document: {
-          ...document,
-          fileSize: document.fileSize?.toString() || null,
-        },
-        rag: ragInfo,
+      message: "上传成功",
+      document: {
+        ...document,
+        fileSize: document.fileSize?.toString() || null,
+      },
+      rag: ragInfo,
       },
       { status: 201 }
     );

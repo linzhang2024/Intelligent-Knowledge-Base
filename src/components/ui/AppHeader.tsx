@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode } from "react";
 
 export type ActivePage = "chat" | "report-sql";
 
-interface NavTab {
-  id: string;
-  label: string;
-  href: string;
-  icon?: string;
-  activeColor?: string;
+interface ChatPageActions {
+  onClearChat?: () => void;
+  isLoading?: boolean;
+}
+
+interface ReportSqlPageActions {
+  onClear?: () => void;
+  isLoading?: boolean;
 }
 
 interface AppHeaderProps {
@@ -18,39 +19,10 @@ interface AppHeaderProps {
   title?: string;
   titleHref?: string;
   showTabs?: boolean;
-  leftActions?: ReactNode;
-  rightActions?: ReactNode;
   showDashboardLink?: boolean;
+  chatPageActions?: ChatPageActions;
+  reportSqlPageActions?: ReportSqlPageActions;
 }
-
-const defaultTabs: Record<ActivePage, NavTab[]> = {
-  chat: [
-    {
-      id: "chat",
-      label: "知识库问答",
-      href: "/chat",
-      activeColor: "green",
-    },
-    {
-      id: "report-sql",
-      label: "报表SQL",
-      href: "/report-sql",
-    },
-  ],
-  "report-sql": [
-    {
-      id: "chat",
-      label: "💬 智能问答",
-      href: "/chat",
-    },
-    {
-      id: "report-sql",
-      label: "📊 报表SQL",
-      href: "/report-sql",
-      activeColor: "indigo",
-    },
-  ],
-};
 
 function HomeIcon({ className }: { className?: string }) {
   return (
@@ -72,28 +44,147 @@ function HomeIcon({ className }: { className?: string }) {
   );
 }
 
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+    </svg>
+  );
+}
+
+function UploadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="17 8 12 3 7 8"></polyline>
+      <line x1="12" y1="3" x2="12" y2="15"></line>
+    </svg>
+  );
+}
+
+const navTabs = {
+  chat: [
+    {
+      id: "chat" as ActivePage,
+      label: "知识库问答",
+      activeClass: "text-green-600 bg-green-50",
+    },
+    {
+      id: "report-sql" as ActivePage,
+      label: "报表SQL",
+      activeClass: "text-gray-500 hover:text-orange-600 hover:bg-orange-50",
+      linkHref: "/report-sql",
+    },
+  ],
+  "report-sql": [
+    {
+      id: "chat" as ActivePage,
+      label: "知识库问答",
+      activeClass: "text-gray-500 hover:text-orange-600 hover:bg-orange-50",
+      linkHref: "/chat",
+    },
+    {
+      id: "report-sql" as ActivePage,
+      label: "报表SQL",
+      activeClass: "text-indigo-600 bg-indigo-50",
+    },
+  ],
+};
+
+const buttonBaseClass =
+  "inline-flex items-center px-3 py-2 border rounded-md text-sm font-medium transition-colors duration-200";
+
+const secondaryButtonClass =
+  "border-gray-200 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300";
+
+const primaryButtonClass =
+  "border-transparent text-white bg-indigo-600 hover:bg-indigo-700";
+
+const dashboardButtonClass =
+  "border-gray-200 text-gray-600 bg-white hover:bg-gray-50 hover:border-gray-300 hover:text-gray-900";
+
+const disabledButtonClass = "opacity-50 cursor-not-allowed";
+
 export default function AppHeader({
   activePage,
   title = "智能知识库",
   titleHref = "/dashboard",
   showTabs = true,
-  leftActions,
-  rightActions,
   showDashboardLink = true,
+  chatPageActions,
+  reportSqlPageActions,
 }: AppHeaderProps) {
-  const tabs = defaultTabs[activePage];
+  const tabs = navTabs[activePage];
 
-  const getTabClasses = (tab: NavTab, isActive: boolean) => {
+  const getTabClasses = (tab: (typeof tabs)[0], isActive: boolean) => {
     if (isActive) {
-      const colorClasses: Record<string, string> = {
-        green: "text-green-600 bg-green-50",
-        indigo: "text-indigo-600 bg-indigo-50",
-      };
-      return `text-sm font-medium px-2 py-1 rounded transition-colors ${
-        colorClasses[tab.activeColor || "green"] || colorClasses.green
-      }`;
+      return `text-sm font-medium px-2 py-1 rounded transition-colors ${tab.activeClass}`;
     }
-    return "text-sm text-gray-500 hover:text-orange-600 px-2 py-1 hover:bg-orange-50 rounded transition-colors";
+    return `text-sm text-gray-500 hover:text-orange-600 px-2 py-1 hover:bg-orange-50 rounded transition-colors`;
+  };
+
+  const renderLeftActions = () => {
+    if (activePage === "chat") {
+      return (
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={chatPageActions?.onClearChat}
+            disabled={chatPageActions?.isLoading}
+            className={`${buttonBaseClass} ${secondaryButtonClass} ${chatPageActions?.isLoading ? disabledButtonClass : ""}`}
+          >
+            <TrashIcon className="mr-2" />
+            清空对话
+          </button>
+          <Link
+            href="/documents/upload"
+            className={`${buttonBaseClass} ${primaryButtonClass}`}
+          >
+            <UploadIcon className="mr-2" />
+            上传文档
+          </Link>
+        </div>
+      );
+    }
+
+    if (activePage === "report-sql") {
+      return (
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={reportSqlPageActions?.onClear}
+            disabled={reportSqlPageActions?.isLoading}
+            className={`${buttonBaseClass} ${secondaryButtonClass} ${reportSqlPageActions?.isLoading ? disabledButtonClass : ""}`}
+          >
+            <TrashIcon className="mr-2" />
+            清空
+          </button>
+        </div>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -115,33 +206,37 @@ export default function AppHeader({
                   <div className="flex items-center space-x-1">
                     {tabs.map((tab) => {
                       const isActive = tab.id === activePage;
-                      return (
-                        <Link
-                          key={tab.id}
-                          href={tab.href}
-                          className={getTabClasses(tab, isActive)}
-                        >
+                      const content = (
+                        <span className={getTabClasses(tab, isActive)}>
                           {tab.label}
-                        </Link>
+                        </span>
                       );
+
+                      if (!isActive && tab.linkHref) {
+                        return (
+                          <Link key={tab.id} href={tab.linkHref}>
+                            {content}
+                          </Link>
+                        );
+                      }
+
+                      return <span key={tab.id}>{content}</span>;
                     })}
                   </div>
                 </>
               )}
             </div>
 
-            {leftActions && (
-              <div className="flex items-center space-x-3">{leftActions}</div>
-            )}
+            <div className="flex items-center space-x-3">
+              {renderLeftActions()}
+            </div>
           </div>
 
           <div className="flex items-center space-x-3">
-            {rightActions}
-
             {showDashboardLink && (
               <Link
                 href="/dashboard"
-                className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 hover:border-gray-300 hover:text-gray-900 transition-all duration-200"
+                className={`${buttonBaseClass} ${dashboardButtonClass}`}
               >
                 <HomeIcon className="mr-2" />
                 工作台

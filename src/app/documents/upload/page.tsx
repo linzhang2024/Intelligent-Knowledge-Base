@@ -6,17 +6,26 @@ import Link from "next/link";
 import BackButton from "@/components/ui/BackButton";
 
 const ALLOWED_TYPES = [
-  "application/pdf", 
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
   "application/sql",
   "text/sql",
   "application/x-sql",
 ];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".sql"];
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const CHUNK_SIZE = 5 * 1024 * 1024;
 
-type UploadStage = "idle" | "uploading" | "parsing" | "chunking" | "success" | "error";
+type UploadStage =
+  | "idle"
+  | "initializing"
+  | "uploading"
+  | "parsing"
+  | "chunking"
+  | "finalizing"
+  | "success"
+  | "error";
 
 interface KnowledgeBase {
   id: string;
@@ -48,19 +57,109 @@ interface FileUploadItem {
   progress: number;
   error?: string;
   result?: UploadResult;
+  uploadId?: string;
+  totalChunks?: number;
+  uploadedChunks?: number;
 }
 
 const STAGE_LABELS: Record<UploadStage, string> = {
   idle: "等待上传",
+  initializing: "初始化...",
   uploading: "正在上传...",
   parsing: "正在解析...",
   chunking: "正在创建切片...",
+  finalizing: "正在处理...",
   success: "上传成功",
   error: "上传失败",
 };
 
 function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  return (
+    Date.now().toString(36) + Math.random().toString(36).substring(2)
+  );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+async function initializeChunkUpload(
+  file: File
+): Promise<{ uploadId: string; chunkSize: number; totalChunks: number }> {
+  const response = await fetch("/api/documents/chunk/init", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `初始化失败 (${response.status})`);
+  }
+
+  return response.json();
+}
+
+async function uploadChunk(
+  uploadId: string,
+  chunkIndex: number,
+  chunk: Blob
+): Promise<{ uploaded: boolean; progress: number }> {
+  const formData = new FormData();
+  formData.append("uploadId", uploadId);
+  formData.append("chunkIndex", chunkIndex.toString());
+  formData.append("chunk", chunk);
+
+  const response = await fetch("/api/documents/chunk/upload", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.message || `上传块 ${chunkIndex} 失败 (${response.status})`
+    );
+  }
+
+  return response.json();
+}
+
+async function completeChunkUpload(
+  uploadId: string,
+  title: string,
+  knowledgeBaseId: string
+): Promise<any> {
+  const response = await fetch("/api/documents/chunk/complete", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      uploadId,
+      title,
+      knowledgeBaseId,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.message || `完成上传失败 (${response.status})`
+    );
+  }
+
+  return response.json();
 }
 
 export default function UploadPage() {
@@ -70,7 +169,6 @@ export default function UploadPage() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [loadingKb, setLoadingKb] = useState(true);
   const router = useRouter();
-  const fileInputRef = useState<HTMLInputElement | null>(null)[0];
 
   useEffect(() => {
     const fetchKnowledgeBases = async () => {
@@ -90,25 +188,26 @@ export default function UploadPage() {
     fetchKnowledgeBases();
   }, []);
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
-
-  const validateFile = (file: File): { valid: boolean; error?: string } => {
+  const validateFile = (
+    file: File
+  ): { valid: boolean; error?: string } => {
     if (file.size > MAX_FILE_SIZE) {
-      return { valid: false, error: `文件大小不能超过 10MB，当前文件大小为 ${formatFileSize(file.size)}` };
+      return {
+        valid: false,
+        error: `文件大小不能超过 100MB，当前文件大小为 ${formatFileSize(file.size)}`,
+      };
     }
 
     const isMimeTypeAllowed = ALLOWED_TYPES.includes(file.type);
-    const fileExtension = "." + (file.name.split(".").pop()?.toLowerCase() || "");
+    const fileExtension =
+      "." + (file.name.split(".").pop()?.toLowerCase() || "");
     const isExtensionAllowed = ALLOWED_EXTENSIONS.includes(fileExtension);
 
     if (!isMimeTypeAllowed && !isExtensionAllowed) {
-      return { valid: false, error: `不支持的文件格式 "${fileExtension}"，仅支持 PDF、DOCX、TXT、SQL 格式` };
+      return {
+        valid: false,
+        error: `不支持的文件格式 "${fileExtension}"，仅支持 PDF、DOCX、TXT、SQL 格式`,
+      };
     }
 
     return { valid: true };
@@ -126,7 +225,9 @@ export default function UploadPage() {
       const validation = validateFile(file);
 
       if (validation.valid) {
-        const isDuplicate = files.some((existing) => existing.name === file.name);
+        const isDuplicate = files.some(
+          (existing) => existing.name === file.name
+        );
         if (!isDuplicate) {
           newFiles.push({
             id: generateId(),
@@ -164,120 +265,196 @@ export default function UploadPage() {
     );
   };
 
-  const simulateProgress = useCallback(
-    (fileId: string, targetStage: UploadStage, startProgress: number, endProgress: number, duration: number) => {
-      return new Promise<void>((resolve) => {
-        updateFile(fileId, { status: targetStage });
-        const steps = 20;
-        const stepDuration = duration / steps;
-        const progressIncrement = (endProgress - startProgress) / steps;
-        let currentProgress = startProgress;
+  const shouldUseChunkedUpload = (file: File): boolean => {
+    return file.size > 10 * 1024 * 1024;
+  };
 
-        const interval = setInterval(() => {
-          currentProgress += progressIncrement;
-          updateFile(fileId, { progress: Math.min(currentProgress, endProgress) });
-
-          if (currentProgress >= endProgress) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, stepDuration);
-      });
-    },
-    []
-  );
-
-  const uploadSingleFile = async (fileItem: FileUploadItem) => {
+  const uploadSingleFileChunked = async (fileItem: FileUploadItem) => {
     const { id, file } = fileItem;
+    const useChunked = shouldUseChunkedUpload(file);
 
     try {
-      await simulateProgress(id, "uploading", 0, 30, 500);
+      if (useChunked) {
+        console.log(
+          `[分块上传] 文件较大 (${formatFileSize(file.size)})，使用分块上传`
+        );
 
-      const formData = new FormData();
-      formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
-      formData.append("content", "");
-      formData.append("knowledgeBaseId", knowledgeBaseId);
-      formData.append("file", file);
+        updateFile(id, { status: "initializing", progress: 0 });
 
-      const xhr = new XMLHttpRequest();
+        const initResult = await initializeChunkUpload(file);
+        const { uploadId, totalChunks } = initResult;
 
-      const uploadPromise = new Promise<{ response: Response; data: any }>((resolve, reject) => {
-        xhr.upload.addEventListener("progress", (event) => {
-          if (event.lengthComputable) {
-            const uploadPercent = (event.loaded / event.total) * 30;
-            updateFile(id, { progress: uploadPercent });
-          }
-        });
-
-        xhr.addEventListener("load", async () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              resolve({
-                response: new Response(xhr.responseText, { status: xhr.status }),
-                data,
-              });
-            } catch (parseError) {
-              reject(new Error("解析响应失败"));
-            }
-          } else {
-            try {
-              const errorData = JSON.parse(xhr.responseText);
-              reject(new Error(errorData.message || `上传失败 (${xhr.status})`));
-            } catch {
-              reject(new Error(`上传失败 (${xhr.status})`));
-            }
-          }
-        });
-
-        xhr.addEventListener("error", () => {
-          reject(new Error("网络错误，请检查网络连接"));
-        });
-
-        xhr.open("POST", "/api/documents/upload");
-        xhr.send(formData);
-      });
-
-      await simulateProgress(id, "parsing", 30, 70, 800);
-
-      const { data } = await uploadPromise;
-
-      await simulateProgress(id, "chunking", 70, 95, 400);
-
-      const isParseError = data.warningType && 
-        (data.warningType === "EmptyContentError" || 
-         data.warningType === "ScannedPDFError" || 
-         data.warningType === "EncryptedPDFError" ||
-         data.warningType === "CorruptedFileError");
-
-      if (isParseError) {
-        const errorMessage = data.parseWarning || "文档解析失败";
         updateFile(id, {
-          status: "error",
-          progress: 100,
-          error: errorMessage,
-          result: {
-            success: false,
-            error: errorMessage,
-          },
+          uploadId,
+          totalChunks,
+          uploadedChunks: 0,
+          status: "uploading",
+          progress: 5,
         });
-      } else {
-        const result: UploadResult = {
-          success: true,
-          documentId: data.document?.id,
-          documentTitle: data.document?.title,
-          fileType: data.document?.fileType,
-          fileSize: data.document?.fileSize,
-          totalWords: data.document?.content?.length || 0,
-          chunkCount: data.rag?.chunkCount || 0,
-          warning: data.parseWarning,
-          warningType: data.warningType,
-        };
 
-        updateFile(id, { status: "success", progress: 100, result });
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+          const start = chunkIndex * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+
+          await uploadChunk(uploadId, chunkIndex, chunk);
+
+          const uploadedChunks = chunkIndex + 1;
+          const uploadProgress = 5 + (uploadedChunks / totalChunks) * 70;
+
+          updateFile(id, {
+            uploadedChunks,
+            progress: uploadProgress,
+          });
+        }
+
+        updateFile(id, { status: "finalizing", progress: 75 });
+
+        const completeResult = await completeChunkUpload(
+          uploadId,
+          file.name.replace(/\.[^/.]+$/, ""),
+          knowledgeBaseId
+        );
+
+        updateFile(id, { status: "chunking", progress: 90 });
+
+        const isParseError =
+          completeResult.warningType &&
+          (completeResult.warningType === "EmptyContentError" ||
+            completeResult.warningType === "ScannedPDFError" ||
+            completeResult.warningType === "EncryptedPDFError" ||
+            completeResult.warningType === "CorruptedFileError");
+
+        if (isParseError) {
+          const errorMessage =
+            completeResult.parseWarning || "文档解析失败";
+          updateFile(id, {
+            status: "error",
+            progress: 100,
+            error: errorMessage,
+            result: {
+              success: false,
+              error: errorMessage,
+            },
+          });
+        } else {
+          const result: UploadResult = {
+            success: true,
+            documentId: completeResult.document?.id,
+            documentTitle: completeResult.document?.title,
+            fileType: completeResult.document?.fileType,
+            fileSize: completeResult.document?.fileSize,
+            totalWords: completeResult.document?.content?.length || 0,
+            chunkCount: completeResult.rag?.chunkCount || 0,
+            warning: completeResult.parseWarning,
+            warningType: completeResult.warningType,
+          };
+
+          updateFile(id, { status: "success", progress: 100, result });
+        }
+      } else {
+        console.log(
+          `[普通上传] 文件较小 (${formatFileSize(file.size)})，使用普通上传`
+        );
+
+        updateFile(id, { status: "uploading", progress: 10 });
+
+        const formData = new FormData();
+        formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
+        formData.append("content", "");
+        formData.append("knowledgeBaseId", knowledgeBaseId);
+        formData.append("file", file);
+
+        const xhr = new XMLHttpRequest();
+
+        const uploadPromise = new Promise<{ response: Response; data: any }>(
+          (resolve, reject) => {
+            xhr.upload.addEventListener("progress", (event) => {
+              if (event.lengthComputable) {
+                const uploadPercent = (event.loaded / event.total) * 60;
+                updateFile(id, { progress: 10 + uploadPercent });
+              }
+            });
+
+            xhr.addEventListener("load", async () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  const data = JSON.parse(xhr.responseText);
+                  resolve({
+                    response: new Response(xhr.responseText, {
+                      status: xhr.status,
+                    }),
+                    data,
+                  });
+                } catch (parseError) {
+                  reject(new Error("解析响应失败"));
+                }
+              } else {
+                try {
+                  const errorData = JSON.parse(xhr.responseText);
+                  reject(
+                    new Error(
+                      errorData.message || `上传失败 (${xhr.status})`
+                    )
+                  );
+                } catch {
+                  reject(new Error(`上传失败 (${xhr.status})`));
+                }
+              }
+            });
+
+            xhr.addEventListener("error", () => {
+              reject(new Error("网络错误，请检查网络连接"));
+            });
+
+            xhr.open("POST", "/api/documents/upload");
+            xhr.send(formData);
+          }
+        );
+
+        updateFile(id, { status: "parsing", progress: 70 });
+
+        const { data } = await uploadPromise;
+
+        updateFile(id, { status: "chunking", progress: 90 });
+
+        const isParseError =
+          data.warningType &&
+          (data.warningType === "EmptyContentError" ||
+            data.warningType === "ScannedPDFError" ||
+            data.warningType === "EncryptedPDFError" ||
+            data.warningType === "CorruptedFileError");
+
+        if (isParseError) {
+          const errorMessage = data.parseWarning || "文档解析失败";
+          updateFile(id, {
+            status: "error",
+            progress: 100,
+            error: errorMessage,
+            result: {
+              success: false,
+              error: errorMessage,
+            },
+          });
+        } else {
+          const result: UploadResult = {
+            success: true,
+            documentId: data.document?.id,
+            documentTitle: data.document?.title,
+            fileType: data.document?.fileType,
+            fileSize: data.document?.fileSize,
+            totalWords: data.document?.content?.length || 0,
+            chunkCount: data.rag?.chunkCount || 0,
+            warning: data.parseWarning,
+            warningType: data.warningType,
+          };
+
+          updateFile(id, { status: "success", progress: 100, result });
+        }
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "上传失败，请稍后重试";
+      const errorMessage =
+        err instanceof Error ? err.message : "上传失败，请稍后重试";
       updateFile(id, {
         status: "error",
         error: errorMessage,
@@ -306,14 +483,22 @@ export default function UploadPage() {
     setIsUploading(true);
 
     for (const fileItem of pendingFiles) {
-      await uploadSingleFile(fileItem);
+      await uploadSingleFileChunked(fileItem);
     }
 
     setIsUploading(false);
   };
 
   const handleRetry = (id: string) => {
-    updateFile(id, { status: "idle", progress: 0, error: undefined, result: undefined });
+    updateFile(id, {
+      status: "idle",
+      progress: 0,
+      error: undefined,
+      result: undefined,
+      uploadId: undefined,
+      totalChunks: undefined,
+      uploadedChunks: undefined,
+    });
   };
 
   const handleClearAll = () => {
@@ -351,8 +536,20 @@ export default function UploadPage() {
   const successCount = files.filter((f) => f.status === "success").length;
   const errorCount = files.filter((f) => f.status === "error").length;
   const pendingCount = files.filter((f) => f.status === "idle").length;
-  const processingCount = files.length - successCount - errorCount - pendingCount;
+  const processingCount =
+    files.length - successCount - errorCount - pendingCount;
   const allDone = files.length > 0 && successCount + errorCount === files.length;
+
+  const getProgressLabel = (fileItem: FileUploadItem): string => {
+    if (
+      fileItem.status === "uploading" &&
+      fileItem.totalChunks !== undefined &&
+      fileItem.uploadedChunks !== undefined
+    ) {
+      return `${STAGE_LABELS[fileItem.status]} (${fileItem.uploadedChunks}/${fileItem.totalChunks} 块)`;
+    }
+    return STAGE_LABELS[fileItem.status];
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -365,8 +562,18 @@ export default function UploadPage() {
               {files.length > 0 && (
                 <p className="text-sm text-gray-500">
                   已选择 {files.length} 个文件
-                  {successCount > 0 && <span className="text-green-600"> · {successCount} 成功</span>}
-                  {errorCount > 0 && <span className="text-red-600"> · {errorCount} 失败</span>}
+                  {successCount > 0 && (
+                    <span className="text-green-600">
+                      {" "}
+                      · {successCount} 成功
+                    </span>
+                  )}
+                  {errorCount > 0 && (
+                    <span className="text-red-600">
+                      {" "}
+                      · {errorCount} 失败
+                    </span>
+                  )}
                 </p>
               )}
             </div>
@@ -377,10 +584,15 @@ export default function UploadPage() {
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-white shadow-sm rounded-lg p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">上传设置</h2>
+            <h2 className="text-lg font-medium text-gray-900 mb-4">
+              上传设置
+            </h2>
 
             <div>
-              <label htmlFor="knowledgeBase" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="knowledgeBase"
+                className="block text-sm font-medium text-gray-700"
+              >
                 所属知识库
               </label>
               {loadingKb ? (
@@ -447,7 +659,9 @@ export default function UploadPage() {
 
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-all ${
-                files.length > 0 ? "border-gray-200" : "border-gray-300 hover:border-indigo-400"
+                files.length > 0
+                  ? "border-gray-200"
+                  : "border-gray-300 hover:border-indigo-400"
               }`}
             >
               <input
@@ -466,9 +680,12 @@ export default function UploadPage() {
                 }`}
               >
                 <div className="text-5xl text-gray-400 mb-4">📁</div>
-                <p className="text-sm font-medium text-gray-600">点击选择文件或拖拽文件到此处</p>
+                <p className="text-sm font-medium text-gray-600">
+                  点击选择文件或拖拽文件到此处
+                </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  支持 PDF, DOCX, TXT, SQL 格式，单文件最大 10MB，可选择多个文件
+                  支持 PDF, DOCX, TXT, SQL 格式，单文件最大 100MB，可选择多个文件。
+                  超过 10MB 的文件将自动使用分块上传。
                 </p>
               </label>
             </div>
@@ -500,15 +717,23 @@ export default function UploadPage() {
                           </p>
                           <p className="text-xs text-gray-500">
                             {formatFileSize(fileItem.size)}
+                            {fileItem.size > 10 * 1024 * 1024 && (
+                              <span className="ml-2 text-indigo-600">
+                                (分块上传)
+                              </span>
+                            )}
                           </p>
                           {fileItem.error && (
-                            <p className="text-xs text-red-600 mt-1">{fileItem.error}</p>
-                          )}
-                          {fileItem.result?.success && fileItem.result.chunkCount !== undefined && (
-                            <p className="text-xs text-green-600 mt-1">
-                              切分为 {fileItem.result.chunkCount} 个片段
+                            <p className="text-xs text-red-600 mt-1">
+                              {fileItem.error}
                             </p>
                           )}
+                          {fileItem.result?.success &&
+                            fileItem.result.chunkCount !== undefined && (
+                              <p className="text-xs text-green-600 mt-1">
+                                切分为 {fileItem.result.chunkCount} 个片段
+                              </p>
+                            )}
                         </div>
                       </div>
                       <div className="flex items-center ml-4 flex-shrink-0">
@@ -523,11 +748,13 @@ export default function UploadPage() {
                               : "text-gray-500"
                           }`}
                         >
-                          {STAGE_LABELS[fileItem.status]}
+                          {getProgressLabel(fileItem)}
                           {fileItem.status !== "idle" &&
                             fileItem.status !== "success" &&
                             fileItem.status !== "error" && (
-                              <span className="ml-1">({Math.round(fileItem.progress)}%)</span>
+                              <span className="ml-1">
+                                ({Math.round(fileItem.progress)}%)
+                              </span>
                             )}
                         </span>
                         {fileItem.status === "idle" && !isUploading && (
@@ -547,8 +774,18 @@ export default function UploadPage() {
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             >
-                              <line x1="18" y1="6" x2="6" y2="18"></line>
-                              <line x1="6" y1="6" x2="18" y2="18"></line>
+                              <line
+                                x1="18"
+                                y1="6"
+                                x2="6"
+                                y2="18"
+                              ></line>
+                              <line
+                                x1="6"
+                                y1="6"
+                                x2="18"
+                                y2="18"
+                              ></line>
                             </svg>
                           </button>
                         )}
@@ -591,6 +828,13 @@ export default function UploadPage() {
                               style={{ width: `${fileItem.progress}%` }}
                             ></div>
                           </div>
+                          {fileItem.totalChunks !== undefined &&
+                            fileItem.uploadedChunks !== undefined && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                已上传 {fileItem.uploadedChunks}/
+                                {fileItem.totalChunks} 块
+                              </p>
+                            )}
                         </div>
                       )}
                   </div>
@@ -599,10 +843,13 @@ export default function UploadPage() {
             )}
 
             <div className="mt-4 bg-blue-50 border border-blue-100 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-blue-800 mb-2">📋 支持的文件格式说明</h4>
+              <h4 className="text-sm font-medium text-blue-800 mb-2">
+                📋 支持的文件格式说明
+              </h4>
               <ul className="text-xs text-blue-700 space-y-1">
                 <li>
-                  • <strong>PDF</strong>: 可编辑的 PDF 文档（扫描版 PDF 可能无法提取文本）
+                  • <strong>PDF</strong>: 可编辑的 PDF 文档（扫描版 PDF
+                  可能无法提取文本）
                 </li>
                 <li>
                   • <strong>DOCX</strong>: Microsoft Word 2007+ 文档
@@ -612,6 +859,10 @@ export default function UploadPage() {
                 </li>
                 <li>
                   • <strong>SQL</strong>: SQL 建表脚本文件（用于导入表结构到知识库）
+                </li>
+                <li>
+                  • <strong>大文件支持</strong>: 超过 10MB
+                  的文件将自动使用分块上传，支持最大 100MB
                 </li>
               </ul>
             </div>
@@ -670,26 +921,44 @@ export default function UploadPage() {
         </form>
 
         {allDone && (
-          <div className={`mt-8 rounded-lg p-6 ${
-            errorCount > 0 
-              ? 'bg-amber-50 border border-amber-200' 
-              : 'bg-green-50 border border-green-200'
-          }`}>
+          <div
+            className={`mt-8 rounded-lg p-6 ${
+              errorCount > 0
+                ? "bg-amber-50 border border-amber-200"
+                : "bg-green-50 border border-green-200"
+            }`}
+          >
             <div className="flex items-start">
               <div className="flex-shrink-0">
-                <span className={`text-3xl ${errorCount > 0 ? 'text-amber-500' : 'text-green-500'}`}>
-                  {errorCount > 0 ? '⚠' : '✓'}
+                <span
+                  className={`text-3xl ${
+                    errorCount > 0 ? "text-amber-500" : "text-green-500"
+                  }`}
+                >
+                  {errorCount > 0 ? "⚠" : "✓"}
                 </span>
               </div>
               <div className="ml-4 flex-1">
-                <h3 className={`text-lg font-medium ${errorCount > 0 ? 'text-amber-800' : 'text-green-800'}`}>
-                  {errorCount > 0 ? '上传完成（部分失败）' : '上传完成！'}
+                <h3
+                  className={`text-lg font-medium ${
+                    errorCount > 0 ? "text-amber-800" : "text-green-800"
+                  }`}
+                >
+                  {errorCount > 0 ? "上传完成（部分失败）" : "上传完成！"}
                 </h3>
-                <p className={`text-sm mt-1 ${errorCount > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                  {successCount > 0 && <span>成功上传 {successCount} 个文档</span>}
+                <p
+                  className={`text-sm mt-1 ${
+                    errorCount > 0 ? "text-amber-600" : "text-green-600"
+                  }`}
+                >
+                  {successCount > 0 && (
+                    <span>成功上传 {successCount} 个文档</span>
+                  )}
                   {errorCount > 0 && (
-                    <span className={successCount > 0 ? 'ml-2' : ''}>
-                      <span className="text-red-600">{errorCount} 个文档上传失败</span>
+                    <span className={successCount > 0 ? "ml-2" : ""}>
+                      <span className="text-red-600">
+                        {errorCount} 个文档上传失败
+                      </span>
                     </span>
                   )}
                 </p>

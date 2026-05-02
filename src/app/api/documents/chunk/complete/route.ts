@@ -1,0 +1,555 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
+import prisma from "@/lib/prisma";
+import { formatFileSize } from "@/lib/format";
+import {
+  embedDocuments,
+  isEmbeddingConfigured,
+  serializeVector,
+} from "@/lib/embedding";
+import {
+  DocumentParseError,
+  EncryptedPDFError,
+  ScannedPDFError,
+  CorruptedFileError,
+  EmptyContentError,
+  getDocumentTypeFromExtension,
+  DocumentType,
+  detectSQLDialect,
+} from "@/lib/documentParser";
+import { importSQLFile, SQLImportResult } from "@/lib/sqlParser";
+import { parseSQLStream, StreamParseProgress } from "@/lib/streaming/sqlStreamParser";
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  unlinkSync,
+  rmdirSync,
+  readFileSync,
+} from "fs";
+import path from "path";
+import { getUploadSession, deleteUploadSession } from "../init/route";
+
+const CHUNK_SIZE = 500;
+const CHUNK_OVERLAP = 50;
+
+const DOCUMENT_STATUS = {
+  DRAFT: "DRAFT",
+  PUBLISHED: "PUBLISHED",
+  ARCHIVED: "ARCHIVED",
+  FAILED: "FAILED",
+} as const;
+
+type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
+
+function splitTextIntoChunks(
+  text: string,
+  chunkSize: number = CHUNK_SIZE,
+  overlap: number = CHUNK_OVERLAP
+): string[] {
+  if (!text || text.length === 0) {
+    return [];
+  }
+
+  const chunks: string[] = [];
+  const sentences = text.split(/([。！？.!?\n])/).filter((s) => s.trim());
+
+  let currentChunk = "";
+
+  for (let i = 0; i < sentences.length; i += 2) {
+    const sentence = sentences[i] + (sentences[i + 1] || "");
+
+    if (
+      currentChunk.length + sentence.length > chunkSize &&
+      currentChunk.length > 0
+    ) {
+      chunks.push(currentChunk.trim());
+
+      if (overlap > 0 && currentChunk.length > overlap) {
+        const lastPart = currentChunk.slice(-overlap);
+        const lastSentenceMatch = lastPart.match(
+          /[^。！？.!?\n]*[。！？.!?\n]?$/
+        );
+        currentChunk = lastSentenceMatch ? lastSentenceMatch[0] : lastPart;
+      } else {
+        currentChunk = "";
+      }
+    }
+
+    currentChunk += sentence;
+  }
+
+  if (currentChunk.trim().length > 0) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
+}
+
+async function mergeChunks(
+  uploadId: string,
+  totalChunks: number,
+  outputPath: string
+): Promise<void> {
+  const tempDir = path.join(process.cwd(), "uploads", "temp", uploadId);
+  const writeStream = createWriteStream(outputPath);
+
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkPath = path.join(tempDir, `chunk_${i}`);
+    if (!existsSync(chunkPath)) {
+      throw new Error(`缺少文件块: chunk_${i}`);
+    }
+
+    const chunkBuffer = readFileSync(chunkPath);
+    writeStream.write(chunkBuffer);
+  }
+
+  return new Promise((resolve, reject) => {
+    writeStream.end((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function cleanupTempFiles(uploadId: string): void {
+  const tempDir = path.join(process.cwd(), "uploads", "temp", uploadId);
+  if (existsSync(tempDir)) {
+    try {
+      const files = require("fs").readdirSync(tempDir);
+      for (const file of files) {
+        const filePath = path.join(tempDir, file);
+        unlinkSync(filePath);
+      }
+      rmdirSync(tempDir);
+    } catch (e) {
+      console.warn("清理临时文件失败:", e);
+    }
+  }
+}
+
+async function extractTextFromFile(
+  filePath: string,
+  fileExtension: string
+): Promise<string> {
+  const docType = getDocumentTypeFromExtension(fileExtension);
+
+  switch (docType) {
+    case "txt":
+    case "sql":
+      return readFileSync(filePath, "utf-8");
+
+    case "pdf": {
+      const { pdfParser } = await import("@/lib/documentParser/pdfParser");
+      const result = await pdfParser.parse(filePath);
+      return result;
+    }
+
+    case "docx": {
+      const { docxParser } = await import("@/lib/documentParser/docxParser");
+      const result = await docxParser.parse(filePath);
+      return result;
+    }
+
+    default:
+      return readFileSync(filePath, "utf-8");
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireAuth(request);
+    const currentUserId = user.id;
+
+    const body = await request.json();
+    const { uploadId, title, knowledgeBaseId } = body;
+
+    if (!uploadId) {
+      return NextResponse.json(
+        { message: "uploadId 不能为空" },
+        { status: 400 }
+      );
+    }
+
+    const session = getUploadSession(uploadId);
+    if (!session) {
+      return NextResponse.json(
+        { message: "上传会话不存在或已过期，请重新开始上传" },
+        { status: 404 }
+      );
+    }
+
+    if (session.userId !== currentUserId) {
+      return NextResponse.json(
+        { message: "您没有权限操作此上传会话" },
+        { status: 403 }
+      );
+    }
+
+    if (session.uploadedChunks.size !== session.totalChunks) {
+      return NextResponse.json(
+        {
+          message: "文件块未上传完整",
+          uploaded: session.uploadedChunks.size,
+          total: session.totalChunks,
+        },
+        { status: 400 }
+      );
+    }
+
+    const uploadsDir = path.join(process.cwd(), "uploads");
+    if (!existsSync(uploadsDir)) {
+      mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(2, 10);
+    const uniqueFileName = `${timestamp}-${randomString}${session.fileExtension}`;
+    const filePath = path.join(uploadsDir, uniqueFileName);
+
+    await mergeChunks(uploadId, session.totalChunks, filePath);
+
+    if (knowledgeBaseId && knowledgeBaseId.trim()) {
+      const kb = await prisma.knowledgeBase.findUnique({
+        where: { id: knowledgeBaseId },
+        select: { id: true, ownerId: true },
+      });
+
+      if (!kb) {
+        cleanupTempFiles(uploadId);
+        return NextResponse.json(
+          { message: "指定的知识库不存在" },
+          { status: 400 }
+        );
+      }
+
+      if (kb.ownerId !== currentUserId) {
+        cleanupTempFiles(uploadId);
+        return NextResponse.json(
+          { message: "您没有权限向此知识库添加文档" },
+          { status: 403 }
+        );
+      }
+    }
+
+    let extractedContent = "";
+    let parseError: DocumentParseError | null = null;
+    let textChunks: string[] = [];
+    let docType: DocumentType | null = null;
+    let sqlParseProgress: StreamParseProgress | null = null;
+
+    try {
+      docType = getDocumentTypeFromExtension(session.fileExtension);
+      console.log(
+        `开始解析文档: ${session.fileName}, 类型: ${docType}, 大小: ${formatFileSize(session.fileSize)}`
+      );
+
+      if (docType === "sql" && session.fileSize > 10 * 1024 * 1024) {
+        console.log(`[流式解析] 大SQL文件，使用流式解析: ${session.fileName}`);
+        
+        const streamResult = await parseSQLStream(filePath, "mysql", (progress) => {
+          sqlParseProgress = { ...progress };
+          console.log(
+            `[流式解析] 进度: 行=${progress.linesProcessed}, 语句=${progress.statementsFound}, 表=${progress.tablesFound}`
+          );
+        });
+
+        extractedContent = readFileSync(filePath, "utf-8");
+        
+        console.log(
+          `[流式解析] 完成: 表=${streamResult.tables.length}, 行=${streamResult.progress.linesProcessed}`
+        );
+      } else {
+        extractedContent = await extractTextFromFile(
+          filePath,
+          session.fileExtension
+        );
+      }
+
+      console.log(
+        `文档解析成功，文本长度: ${extractedContent.length} 字符`
+      );
+    } catch (error) {
+      if (error instanceof DocumentParseError) {
+        parseError = error;
+        console.log("文档解析失败:", error.message);
+      } else if (error instanceof Error) {
+        parseError = new DocumentParseError(
+          `解析失败: ${error.message}`,
+          docType || "document"
+        );
+        console.log("文档解析失败:", error.message);
+      } else {
+        throw error;
+      }
+    }
+
+    if (!parseError) {
+      textChunks = splitTextIntoChunks(extractedContent);
+      console.log(
+        `[RAG 预处理] 文档 "${title || session.fileName}" 文本长度: ${extractedContent.length} 字符`
+      );
+      console.log(
+        `[RAG 预处理] 文档 "${title || session.fileName}" 切片数量: ${textChunks.length} 个片段`
+      );
+
+      if (textChunks.length === 0) {
+        console.log(
+          `[RAG 预处理] 文档 "${title || session.fileName}" 切片数量为0`
+        );
+        parseError = new EmptyContentError(
+          docType?.toUpperCase() || "DOCUMENT"
+        );
+      }
+
+      if (textChunks.length > 0) {
+        console.log(
+          `[RAG 预处理] 文档 "${title || session.fileName}" 第一个片段长度: ${textChunks[0].length} 字符`
+        );
+      }
+    }
+
+    if (parseError) {
+      console.log(
+        `[RAG 预处理] 文档 "${title || session.fileName}" 解析失败，创建 FAILED 状态文档`
+      );
+
+      const failedDocument = await prisma.document.create({
+        data: {
+          title: title || session.fileName.replace(/\.[^/.]+$/, ""),
+          content: null,
+          fileUrl: `/uploads/${uniqueFileName}`,
+          fileType: session.fileExtension.substring(1).toUpperCase(),
+          fileSize: BigInt(session.fileSize),
+          status: DOCUMENT_STATUS.FAILED,
+          authorId: currentUserId,
+          knowledgeBaseId: knowledgeBaseId || null,
+        },
+      });
+
+      cleanupTempFiles(uploadId);
+      deleteUploadSession(uploadId);
+
+      return NextResponse.json(
+        {
+          message: parseError.message,
+          errorType: parseError.name,
+          document: {
+            ...failedDocument,
+            fileSize: failedDocument.fileSize?.toString() || null,
+          },
+        },
+        { status: 500 }
+      );
+    }
+
+    const document = await prisma.$transaction(async (tx) => {
+      const newDocument = await tx.document.create({
+        data: {
+          title: title || session.fileName.replace(/\.[^/.]+$/, ""),
+          content: extractedContent || null,
+          fileUrl: `/uploads/${uniqueFileName}`,
+          fileType: session.fileExtension.substring(1).toUpperCase(),
+          fileSize: BigInt(session.fileSize),
+          status: DOCUMENT_STATUS.DRAFT,
+          authorId: currentUserId,
+          knowledgeBaseId: knowledgeBaseId || null,
+        },
+      });
+
+      const chunkData = textChunks.map((chunk, index) => ({
+        documentId: newDocument.id,
+        index,
+        content: chunk,
+      }));
+
+      try {
+        await tx.documentChunk.createMany({
+          data: chunkData,
+        });
+        console.log(
+          `[RAG 存储] 文档 "${title || session.fileName}" 成功存储 ${chunkData.length} 个片段`
+        );
+      } catch (chunkError) {
+        console.error(`[RAG 存储] 文档片段存储失败:`, chunkError);
+        throw chunkError;
+      }
+
+      return newDocument;
+    });
+
+    let embeddingSuccess = false;
+    let embeddingError: string | null = null;
+    let sqlImportResult: SQLImportResult | null = null;
+
+    const isSQLFile =
+      session.fileExtension.toLowerCase() === ".sql" || docType === "sql";
+
+    if (isSQLFile && extractedContent) {
+      try {
+        console.log(
+          `[SQL导入] 检测到SQL文件，开始解析表结构: "${title || session.fileName}"`
+        );
+
+        const dialect = detectSQLDialect(extractedContent);
+        console.log(`[SQL导入] 检测到的SQL方言: ${dialect}`);
+
+        sqlImportResult = await importSQLFile(extractedContent, {
+          knowledgeBaseId: knowledgeBaseId || undefined,
+          documentId: document.id,
+          userId: currentUserId,
+          overwriteExisting: false,
+          inferRelations: true,
+          dialect: dialect,
+        });
+
+        console.log(
+          `[SQL导入] 导入完成: 表=${sqlImportResult.tablesImported}, 字段=${sqlImportResult.columnsImported}, 关系=${sqlImportResult.relationsImported}`
+        );
+
+        if (sqlImportResult.warnings.length > 0) {
+          console.log(
+            `[SQL导入] 警告: ${sqlImportResult.warnings.join(", ")}`
+          );
+        }
+        if (sqlImportResult.errors.length > 0) {
+          console.log(
+            `[SQL导入] 错误: ${sqlImportResult.errors.join(", ")}`
+          );
+        }
+      } catch (error) {
+        console.error(`[SQL导入] 导入失败:`, error);
+        sqlImportResult = {
+          success: false,
+          tablesImported: 0,
+          columnsImported: 0,
+          relationsImported: 0,
+          errors: [error instanceof Error ? error.message : "未知错误"],
+          warnings: [],
+          tableNames: [],
+        };
+      }
+    }
+
+    if (isEmbeddingConfigured()) {
+      try {
+        console.log(
+          `[RAG Embedding] 开始向量化文档 "${title || session.fileName}" 的 ${textChunks.length} 个片段`
+        );
+
+        const embeddingResult = await embedDocuments(textChunks);
+        console.log(
+          `[RAG Embedding] 向量化完成，模型: ${embeddingResult.model}, 维度: ${embeddingResult.dimensions}`
+        );
+
+        const chunks = await prisma.documentChunk.findMany({
+          where: { documentId: document.id },
+          orderBy: { index: "asc" },
+        });
+
+        for (
+          let i = 0;
+          i < chunks.length && i < embeddingResult.vectors.length;
+          i++
+        ) {
+          await prisma.documentChunk.update({
+            where: { id: chunks[i].id },
+            data: {
+              embedding: serializeVector(embeddingResult.vectors[i]),
+              embeddingModel: embeddingResult.model,
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        embeddingSuccess = true;
+        console.log(
+          `[RAG Embedding] 文档 "${title || session.fileName}" 向量化存储完成`
+        );
+      } catch (error) {
+        embeddingError =
+          error instanceof Error ? error.message : "未知错误";
+        console.error(`[RAG Embedding] 向量化失败:`, error);
+      }
+    } else {
+      console.log(`[RAG Embedding] Embedding 服务未配置，跳过向量化`);
+    }
+
+    const ragInfo = {
+      chunkCount: textChunks.length,
+      embeddingConfigured: isEmbeddingConfigured(),
+      embeddingSuccess,
+      embeddingError,
+    };
+
+    const responseData: any = {
+      message: "上传成功",
+      document: {
+        ...document,
+        fileSize: document.fileSize?.toString() || null,
+      },
+      rag: ragInfo,
+      uploadMethod: "chunked",
+      totalChunks: session.totalChunks,
+    };
+
+    if (sqlParseProgress) {
+      responseData.streamParseProgress = sqlParseProgress;
+    }
+
+    if (sqlImportResult) {
+      responseData.sqlImport = {
+        success: sqlImportResult.success,
+        tablesImported: sqlImportResult.tablesImported,
+        columnsImported: sqlImportResult.columnsImported,
+        relationsImported: sqlImportResult.relationsImported,
+        errors: sqlImportResult.errors,
+        warnings: sqlImportResult.warnings,
+        tableNames: sqlImportResult.tableNames,
+      };
+    }
+
+    cleanupTempFiles(uploadId);
+    deleteUploadSession(uploadId);
+
+    return NextResponse.json(responseData, { status: 201 });
+  } catch (error) {
+    if (error instanceof DocumentParseError) {
+      return NextResponse.json(
+        { message: error.message, errorType: error.name },
+        { status: 400 }
+      );
+    }
+
+    if (error instanceof Error) {
+      if (error.message === "未授权访问") {
+        return NextResponse.json(
+          { message: "未登录，请先登录" },
+          { status: 401 }
+        );
+      }
+      if (
+        error.message === "账号待审核，请联系管理员" ||
+        error.message === "账号已被禁用，请联系管理员"
+      ) {
+        return NextResponse.json(
+          { message: error.message },
+          { status: 403 }
+        );
+      }
+    }
+
+    console.error("分块上传完成失败:", error);
+
+    const errorMessage = error instanceof Error ? error.message : "未知错误";
+
+    return NextResponse.json(
+      {
+        message: `上传失败: ${errorMessage}`,
+        errorType: "INTERNAL_ERROR",
+      },
+      { status: 500 }
+    );
+  }
+}

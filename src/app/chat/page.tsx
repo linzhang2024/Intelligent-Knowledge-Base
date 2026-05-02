@@ -271,7 +271,17 @@ export default function ChatPage() {
                   智能知识库
                 </Link>
                 <span className="text-gray-300">|</span>
-                <span className="text-sm text-gray-600">知识库问答</span>
+                <div className="flex items-center space-x-1">
+                  <span className="text-sm font-medium text-green-600 px-2 py-1 bg-green-50 rounded">
+                    知识库问答
+                  </span>
+                  <Link
+                    href="/report-sql"
+                    className="text-sm text-gray-500 hover:text-orange-600 px-2 py-1 hover:bg-orange-50 rounded transition-colors"
+                  >
+                    报表SQL
+                  </Link>
+                </div>
               </div>
               <div className="flex items-center space-x-3">
                 <button

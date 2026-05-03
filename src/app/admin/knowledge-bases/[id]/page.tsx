@@ -335,13 +335,13 @@ function DeleteConfirmModal({
         <div className="relative w-full max-w-md transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
           <div className="mb-4">
             <h3 className="text-lg font-medium text-gray-900 mb-2">
-              确认移除
+              确认删除
             </h3>
             <p className="text-sm text-gray-600">
-              确定要将文档 <span className="font-medium text-gray-900">"{document.title}"</span> 从当前知识库移除吗？
+              确定要删除文档 <span className="font-medium text-gray-900">"{document.title}"</span> 吗？
             </p>
             <p className="text-xs text-gray-400 mt-2">
-              此操作仅解除文档与当前知识库的关联，不会物理删除文档数据。
+              此操作将删除该文档及其所有关联的分片数据，且不可撤销。
             </p>
           </div>
           <div className="mt-6 flex justify-end space-x-3">
@@ -355,7 +355,7 @@ function DeleteConfirmModal({
               onClick={onConfirm}
               className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700"
             >
-              确认移除
+              确认删除
             </button>
           </div>
         </div>
@@ -427,12 +427,13 @@ export default function KnowledgeBaseDetailPage() {
       const params = new URLSearchParams({
         page: page.toString(),
         limit: "10",
+        knowledgeBaseId,
       });
       if (searchQuery) {
         params.append("search", searchQuery);
       }
 
-      const response = await fetch(`/api/admin/knowledge-bases/${knowledgeBaseId}/documents?${params.toString()}`);
+      const response = await fetch(`/api/admin/documents?${params.toString()}`);
 
       if (response.status === 401) {
         window.location.href = "/login";
@@ -577,12 +578,8 @@ export default function KnowledgeBaseDetailPage() {
     setActionLoading(documentId);
 
     try {
-      const response = await fetch(`/api/admin/knowledge-bases/${knowledgeBaseId}/documents`, {
+      const response = await fetch(`/api/admin/documents/${documentId}`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ documentId }),
       });
 
       if (response.status === 401) {
@@ -592,7 +589,7 @@ export default function KnowledgeBaseDetailPage() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.message || "移除失败");
+        throw new Error(data.message || "删除失败");
       }
 
       setDocuments((prev) => prev.filter((d) => d.id !== documentId));
@@ -609,7 +606,7 @@ export default function KnowledgeBaseDetailPage() {
         });
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "移除失败");
+      alert(err instanceof Error ? err.message : "删除失败");
     } finally {
       setActionLoading(null);
       handleDeleteModalClose();
@@ -868,7 +865,7 @@ export default function KnowledgeBaseDetailPage() {
                               disabled={actionLoading === doc.id}
                               className="inline-flex items-center px-3 py-1.5 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-white hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              移除
+                              删除
                             </button>
                           </div>
                         </td>

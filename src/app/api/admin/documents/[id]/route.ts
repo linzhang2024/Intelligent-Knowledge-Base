@@ -37,16 +37,6 @@ export async function GET(
             name: true,
           },
         },
-        knowledgeBaseLinks: {
-          include: {
-            knowledgeBase: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
         chunks: {
           orderBy: { index: "asc" as const },
           select: {
@@ -66,21 +56,9 @@ export async function GET(
       );
     }
 
-    const allKnowledgeBases = [
-      ...(document.knowledgeBase ? [document.knowledgeBase] : []),
-      ...document.knowledgeBaseLinks.map((link) => link.knowledgeBase),
-    ];
-
-    const uniqueKnowledgeBases = allKnowledgeBases.filter(
-      (kb, index, self) =>
-        index === self.findIndex((t) => t.id === kb.id)
-    );
-
     const serializedDocument = {
       ...document,
       fileSize: document.fileSize?.toString() || null,
-      knowledgeBases: uniqueKnowledgeBases,
-      knowledgeBaseLinks: undefined,
       chunks: document.chunks.map(chunk => ({
         ...chunk,
       })),
@@ -189,34 +167,12 @@ export async function PATCH(
             name: true,
           },
         },
-        knowledgeBaseLinks: {
-          include: {
-            knowledgeBase: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
       },
     });
-
-    const allKnowledgeBases = [
-      ...(updatedDocument.knowledgeBase ? [updatedDocument.knowledgeBase] : []),
-      ...updatedDocument.knowledgeBaseLinks.map((link) => link.knowledgeBase),
-    ];
-
-    const uniqueKnowledgeBases = allKnowledgeBases.filter(
-      (kb, index, self) =>
-        index === self.findIndex((t) => t.id === kb.id)
-    );
 
     const serializedDocument = {
       ...updatedDocument,
       fileSize: updatedDocument.fileSize?.toString() || null,
-      knowledgeBases: uniqueKnowledgeBases,
-      knowledgeBaseLinks: undefined,
     };
 
     return NextResponse.json(

@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+
+interface KnowledgeBase {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  documentCount: number;
+}
 
 interface TableInfo {
   id: string;
@@ -35,51 +43,77 @@ interface RelationInfo {
   joinCondition: string | null;
 }
 
-interface GeneratedSQL {
+interface ReferenceTable {
+  name: string;
+  comment: string | null;
+  columns: string[];
+  reason: string;
+}
+
+interface ReferenceDocument {
+  title: string;
+  knowledgeBaseName: string | null;
+  similarity: number;
+  content: string;
+}
+
+interface GeneratedResult {
   sql: string;
   explanation: string;
   tablesUsed: string[];
   columnsUsed: string[];
-  joinCount: number;
-  complexity: "simple" | "medium" | "complex";
+  references: {
+    tables: ReferenceTable[];
+    documents: ReferenceDocument[];
+  };
   confidence: number;
   dialect: string;
 }
 
-interface ValidationError {
-  line: number;
-  column: number;
-  message: string;
-  severity: "error" | "warning" | "info";
-  rule: string;
-  suggestion?: string;
-}
-
-interface ValidationResult {
-  isValid: boolean;
-  errors: ValidationError[];
-  warnings: ValidationError[];
-  infos: ValidationError[];
-  syntaxCheck: boolean;
-}
-
 export default function SQLGeneratorPage() {
   const [requirement, setRequirement] = useState("");
-  const [knowledgeBaseId, setKnowledgeBaseId] = useState("");
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState<string>("");
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("mysql");
   const [tables, setTables] = useState<TableInfo[]>([]);
-  const [generatedSQLs, setGeneratedSQLs] = useState<GeneratedSQL[]>([]);
-  const [selectedSQL, setSelectedSQL] = useState(0);
-  const [validation, setValidation] = useState<ValidationResult | null>(null);
-  const [explanation, setExplanation] = useState("");
+  const [generatedResult, setGeneratedResult] = useState<GeneratedResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isValidating, setIsValidating] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const [error, setError] = useState("");
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
+  const [showReferences, setShowReferences] = useState(true);
+  const streamingContentRef = useRef<string>("");
+  const tablesRef = useRef<TableInfo[]>([]);
 
   useEffect(() => {
-    loadTables();
+    loadKnowledgeBases();
+  }, []);
+
+  useEffect(() => {
+    if (knowledgeBaseId) {
+      loadTables();
+    } else {
+      setTables([]);
+    }
   }, [knowledgeBaseId]);
+
+  useEffect(() => {
+    tablesRef.current = tables;
+  }, [tables]);
+
+  const loadKnowledgeBases = async () => {
+    try {
+      const response = await fetch("/api/kb");
+      const data = await response.json();
+      
+      if (data.knowledgeBases) {
+        setKnowledgeBases(data.knowledgeBases);
+      }
+    } catch (err) {
+      console.error("加载知识库列表失败:", err);
+    }
+  };
 
   const loadTables = async () => {
     try {
@@ -98,83 +132,180 @@ export default function SQLGeneratorPage() {
     }
   };
 
+  const parseStreamingResponse = (content: string): { sql: string; explanation: string } => {
+    let sql = "";
+    let explanation = "";
+    
+    const sqlMatch = content.match(/```sql\s*([\s\S]*?)\s*```/);
+    if (sqlMatch) {
+      sql = sqlMatch[1].trim();
+    }
+    
+    const explanationMatch = content.match(/逻辑解释[：:]\s*([\s\S]*?)(?=\n---|$)/i);
+    if (explanationMatch) {
+      explanation = explanationMatch[1].trim();
+    }
+    
+    return { sql, explanation };
+  };
+
+  const extractTablesFromContent = (content: string): string[] => {
+    const tables: string[] = [];
+    const tablePattern = /【表名】\s*(\w+)/g;
+    let match;
+    while ((match = tablePattern.exec(content)) !== null) {
+      if (!tables.includes(match[1])) {
+        tables.push(match[1]);
+      }
+    }
+    return tables;
+  };
+
   const handleGenerate = async () => {
     if (!requirement.trim()) {
-      setError("请输入报表需求");
+      setError("请输入需求描述");
       return;
     }
 
     setIsLoading(true);
+    setIsStreaming(true);
     setError("");
-    setGeneratedSQLs([]);
-    setValidation(null);
-    setExplanation("");
+    setGeneratedResult(null);
+    setStreamingContent("");
+    streamingContentRef.current = "";
 
     try {
-      const response = await fetch("/api/sql/generate", {
+      const response = await fetch("/api/qa/sql", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           requirement,
           knowledgeBaseId: knowledgeBaseId || undefined,
           dialect,
-          includeComments: true,
-          useAlias: true,
+          streaming: true,
         }),
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "请求失败");
+      }
 
-      if (data.success) {
-        setGeneratedSQLs(data.sqlCandidates || []);
-        setSelectedSQL(0);
-        
-        if (data.sqlCandidates && data.sqlCandidates.length > 0) {
-          setExplanation(data.sqlCandidates[0].explanation);
+      const contentType = response.headers.get("content-type") || "";
+      
+      if (contentType.includes("text/event-stream")) {
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("无法读取响应流");
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("event:")) {
+              const eventMatch = line.match(/event:\s*(\w+)/);
+              const dataMatch = line.match(/data:\s*(.+)/);
+              
+              if (eventMatch && dataMatch) {
+                const event = eventMatch[1];
+                const data = JSON.parse(dataMatch[1]);
+                
+                if (event === "content") {
+                  streamingContentRef.current += data.content;
+                  setStreamingContent(streamingContentRef.current);
+                } else if (event === "info") {
+                  console.log("Info:", data.message);
+                } else if (event === "error") {
+                  setError(data.message);
+                  setIsLoading(false);
+                  setIsStreaming(false);
+                  return;
+                } else if (event === "done") {
+                  const finalContent = streamingContentRef.current;
+                  const currentTables = tablesRef.current;
+                  const { sql, explanation } = parseStreamingResponse(finalContent);
+                  const tablesUsed = extractTablesFromContent(finalContent);
+                  
+                  const referenceTables: ReferenceTable[] = currentTables
+                    .filter(t => tablesUsed.includes(t.name))
+                    .map(t => ({
+                      name: t.name,
+                      comment: t.tableComment,
+                      columns: t.columns.slice(0, 5).map(c => c.name),
+                      reason: "语义检索匹配，与需求相关度高",
+                    }));
+
+                  setGeneratedResult({
+                    sql: sql || finalContent,
+                    explanation: explanation || "AI生成的SQL查询",
+                    tablesUsed,
+                    columnsUsed: [],
+                    references: {
+                      tables: referenceTables,
+                      documents: [],
+                    },
+                    confidence: 0.8,
+                    dialect,
+                  });
+                  
+                  setIsLoading(false);
+                  setIsStreaming(false);
+                  return;
+                }
+              }
+            }
+          }
         }
       } else {
-        setError(data.message || "生成失败");
+        const data = await response.json();
+        const currentTables = tablesRef.current;
+        
+        if (data.success && data.result) {
+          const referenceTables: ReferenceTable[] = currentTables
+            .filter(t => data.result.tablesUsed?.includes(t.name))
+            .map(t => ({
+              name: t.name,
+              comment: t.tableComment,
+              columns: t.columns.slice(0, 5).map(c => c.name),
+              reason: "语义检索匹配，与需求相关度高",
+            }));
+
+          setGeneratedResult({
+            sql: data.result.sql,
+            explanation: data.result.explanation,
+            tablesUsed: data.result.tablesUsed || [],
+            columnsUsed: data.result.columnsUsed || [],
+            references: {
+              tables: referenceTables,
+              documents: data.result.references?.documents || [],
+            },
+            confidence: data.result.confidence || 0.7,
+            dialect,
+          });
+        } else {
+          throw new Error(data.message || "生成失败");
+        }
       }
     } catch (err) {
       setError(`请求失败: ${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleValidate = async () => {
-    if (generatedSQLs.length === 0) return;
-
-    setIsValidating(true);
-
-    try {
-      const response = await fetch("/api/sql/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sql: generatedSQLs[selectedSQL].sql,
-          knowledgeBaseId: knowledgeBaseId || undefined,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setValidation(data.validation);
-        if (data.explanation) {
-          setExplanation(data.explanation);
-        }
-      }
-    } catch (err) {
-      console.error("验证失败:", err);
-    } finally {
-      setIsValidating(false);
+      setIsStreaming(false);
     }
   };
 
   const handleCopySQL = () => {
-    if (generatedSQLs.length > 0) {
-      navigator.clipboard.writeText(generatedSQLs[selectedSQL].sql);
+    if (generatedResult?.sql) {
+      navigator.clipboard.writeText(generatedResult.sql);
     }
   };
 
@@ -201,7 +332,7 @@ export default function SQLGeneratorPage() {
             SQL 自动生成器
           </h1>
           <p className="text-gray-600">
-            根据报表需求自动生成 SQL 语句，基于知识库中的表结构
+            基于RAG技术，从知识库中检索相关表结构，智能生成SQL语句
           </p>
         </div>
 
@@ -209,43 +340,50 @@ export default function SQLGeneratorPage() {
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                报表需求
+                需求描述
               </h2>
 
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    SQL 方言
-                  </label>
-                  <select
-                    value={dialect}
-                    onChange={(e) => setDialect(e.target.value as any)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="mysql">MySQL</option>
-                    <option value="postgresql">PostgreSQL</option>
-                    <option value="sqlite">SQLite</option>
-                    <option value="mssql">SQL Server</option>
-                    <option value="oracle">Oracle</option>
-                  </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      选择知识库
+                    </label>
+                    <select
+                      value={knowledgeBaseId}
+                      onChange={(e) => setKnowledgeBaseId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">全部可用知识库</option>
+                      {knowledgeBases.map((kb) => (
+                        <option key={kb.id} value={kb.id}>
+                          {kb.name} ({kb.documentCount} 个文档)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      SQL 方言
+                    </label>
+                    <select
+                      value={dialect}
+                      onChange={(e) => setDialect(e.target.value as any)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="mysql">MySQL</option>
+                      <option value="postgresql">PostgreSQL</option>
+                      <option value="sqlite">SQLite</option>
+                      <option value="mssql">SQL Server</option>
+                      <option value="oracle">Oracle</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    知识库 ID（可选，留空使用所有可用表）
-                  </label>
-                  <input
-                    type="text"
-                    value={knowledgeBaseId}
-                    onChange={(e) => setKnowledgeBaseId(e.target.value)}
-                    placeholder="输入知识库 ID"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    描述您需要的报表
+                    描述您需要的查询
                   </label>
                   <textarea
                     value={requirement}
@@ -290,29 +428,56 @@ export default function SQLGeneratorPage() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                       </svg>
-                      生成中...
+                      {isStreaming ? "生成中..." : "检索相关表结构..."}
                     </>
                   ) : (
-                    "生成 SQL"
+                    <>
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      生成 SQL
+                    </>
                   )}
                 </button>
               </div>
             </div>
 
-            {generatedSQLs.length > 0 && (
+            {isStreaming && streamingContent && (
               <div className="bg-white rounded-lg shadow">
                 <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-gray-900">
-                    生成的 SQL
+                    实时生成中...
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-sm text-gray-500">流式输出</span>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm whitespace-pre-wrap max-h-96">
+                    {streamingContent}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {generatedResult && !isStreaming && (
+              <div className="bg-white rounded-lg shadow">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    生成结果
                   </h2>
                   <div className="flex items-center gap-3">
-                    <button
-                      onClick={handleValidate}
-                      disabled={isValidating}
-                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-md transition-colors"
-                    >
-                      {isValidating ? "验证中..." : "验证语法"}
-                    </button>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-500">置信度:</span>
+                      <span className={`font-medium ${
+                        generatedResult.confidence >= 0.8 ? "text-green-600" :
+                        generatedResult.confidence >= 0.6 ? "text-yellow-600" :
+                        "text-red-600"
+                      }`}>
+                        {(generatedResult.confidence * 100).toFixed(1)}%
+                      </span>
+                    </div>
                     <button
                       onClick={handleCopySQL}
                       className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-md transition-colors"
@@ -322,136 +487,126 @@ export default function SQLGeneratorPage() {
                   </div>
                 </div>
 
-                {generatedSQLs.length > 1 && (
-                  <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      选择候选方案
-                    </label>
-                    <select
-                      value={selectedSQL}
-                      onChange={(e) => {
-                        setSelectedSQL(parseInt(e.target.value));
-                        setValidation(null);
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      {generatedSQLs.map((sql, index) => (
-                        <option key={index} value={index}>
-                          方案 {index + 1} - 复杂度: {sql.complexity}, 置信度: {(sql.confidence * 100).toFixed(1)}%
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
                 <div className="p-6">
                   <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm whitespace-pre-wrap">
-                    {generatedSQLs[selectedSQL]?.sql}
+                    {generatedResult.sql}
                   </pre>
 
-                  {generatedSQLs[selectedSQL] && (
-                    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-3 bg-blue-50 rounded-lg">
-                        <div className="text-sm text-gray-500">复杂度</div>
-                        <div className="font-semibold text-blue-700 capitalize">
-                          {generatedSQLs[selectedSQL].complexity}
-                        </div>
-                      </div>
-                      <div className="p-3 bg-green-50 rounded-lg">
-                        <div className="text-sm text-gray-500">置信度</div>
-                        <div className="font-semibold text-green-700">
-                          {(generatedSQLs[selectedSQL].confidence * 100).toFixed(1)}%
-                        </div>
-                      </div>
-                      <div className="p-3 bg-purple-50 rounded-lg">
-                        <div className="text-sm text-gray-500">涉及表数</div>
-                        <div className="font-semibold text-purple-700">
-                          {generatedSQLs[selectedSQL].tablesUsed.length}
-                        </div>
-                      </div>
-                      <div className="p-3 bg-orange-50 rounded-lg">
-                        <div className="text-sm text-gray-500">JOIN 数</div>
-                        <div className="font-semibold text-orange-700">
-                          {generatedSQLs[selectedSQL].joinCount}
-                        </div>
+                  {generatedResult.tablesUsed.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">
+                        涉及表:
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {generatedResult.tablesUsed.map((table, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {table}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   )}
                 </div>
 
-                {validation && (
-                  <div className="px-6 py-4 border-t border-gray-200">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">
-                      验证结果
-                    </h3>
-                    
-                    {validation.errors.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-medium text-red-700 mb-2">
-                          错误 ({validation.errors.length})
-                        </h4>
-                        <div className="space-y-2">
-                          {validation.errors.map((err, index) => (
-                            <div key={index} className="p-2 bg-red-50 border border-red-200 rounded text-sm">
-                              <span className="font-medium text-red-700">行 {err.line}: </span>
-                              <span className="text-red-600">{err.message}</span>
-                              {err.suggestion && (
-                                <span className="text-red-500 ml-2">（建议: {err.suggestion}）</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {validation.warnings.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-medium text-yellow-700 mb-2">
-                          警告 ({validation.warnings.length})
-                        </h4>
-                        <div className="space-y-2">
-                          {validation.warnings.map((warn, index) => (
-                            <div key={index} className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm">
-                              <span className="font-medium text-yellow-700">行 {warn.line}: </span>
-                              <span className="text-yellow-600">{warn.message}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {validation.infos.length > 0 && (
-                      <div>
-                        <h4 className="text-sm font-medium text-blue-700 mb-2">
-                          建议 ({validation.infos.length})
-                        </h4>
-                        <div className="space-y-2">
-                          {validation.infos.map((info, index) => (
-                            <div key={index} className="p-2 bg-blue-50 border border-blue-200 rounded text-sm">
-                              <span className="font-medium text-blue-700">行 {info.line}: </span>
-                              <span className="text-blue-600">{info.message}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {validation.errors.length === 0 && validation.warnings.length === 0 && validation.infos.length === 0 && (
-                      <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-700">
-                        ✅ SQL 语法验证通过
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {explanation && (
+                {generatedResult.explanation && (
                   <div className="px-6 py-4 border-t border-gray-200">
                     <h3 className="text-sm font-semibold text-gray-900 mb-3">
                       SQL 逻辑解释
                     </h3>
                     <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
-                      {explanation}
+                      {generatedResult.explanation}
                     </div>
+                  </div>
+                )}
+
+                {showReferences && (
+                  <div className="px-6 py-4 border-t border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                      引用标记
+                    </h3>
+
+                    {generatedResult.references.tables.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
+                          参考的物理表
+                        </h4>
+                        <div className="space-y-2">
+                          {generatedResult.references.tables.map((table, index) => (
+                            <div
+                              key={index}
+                              className="p-3 bg-blue-50 border border-blue-200 rounded-lg"
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-mono font-medium text-blue-800">
+                                  {table.name}
+                                </span>
+                                <span className="text-xs text-blue-600">
+                                  {table.reason}
+                                </span>
+                              </div>
+                              {table.comment && (
+                                <p className="text-xs text-blue-600 mb-2">
+                                  {table.comment}
+                                </p>
+                              )}
+                              <div className="flex flex-wrap gap-1">
+                                {table.columns.map((col, colIndex) => (
+                                  <span
+                                    key={colIndex}
+                                    className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700"
+                                  >
+                                    {col}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {generatedResult.references.documents.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
+                          参考的文档片段
+                        </h4>
+                        <div className="space-y-2">
+                          {generatedResult.references.documents.map((doc, index) => (
+                            <div
+                              key={index}
+                              className="p-3 bg-green-50 border border-green-200 rounded-lg"
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-medium text-green-800">
+                                  {doc.title}
+                                </span>
+                                <span className="text-xs text-green-600">
+                                  相似度: {(doc.similarity * 100).toFixed(1)}%
+                                </span>
+                              </div>
+                              {doc.knowledgeBaseName && (
+                                <p className="text-xs text-green-600 mb-2">
+                                  来自: {doc.knowledgeBaseName}
+                                </p>
+                              )}
+                              <p className="text-sm text-green-700 line-clamp-3">
+                                {doc.content}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {generatedResult.references.tables.length === 0 &&
+                     generatedResult.references.documents.length === 0 && (
+                      <p className="text-sm text-gray-500">
+                        暂无引用信息
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -558,11 +713,11 @@ export default function SQLGeneratorPage() {
                 使用提示
               </h3>
               <ul className="text-sm text-blue-800 space-y-2">
-                <li>• 在需求描述中明确指定需要查询的表和字段</li>
-                <li>• 包含筛选条件，如"金额大于1000"</li>
-                <li>• 说明排序方式，如"按创建时间降序"</li>
-                <li>• 指定分组统计，如"按用户统计订单数"</li>
-                <li>• 导入 SQL 文件后，系统会自动识别表关系</li>
+                <li>• 选择包含表结构的知识库</li>
+                <li>• 用自然语言描述您的查询需求</li>
+                <li>• 系统会自动检索相关的表结构</li>
+                <li>• AI基于检索到的信息生成SQL</li>
+                <li>• 查看"引用标记"了解参考了哪些表</li>
               </ul>
             </div>
           </div>

@@ -161,6 +161,21 @@ export interface SQLAlternative {
   confidence: number;
 }
 
+export interface ReferenceTable {
+  name: string;
+  comment: string | null;
+  columns: string[];
+  reason: string;
+  similarity?: number;
+}
+
+export interface ReferenceDocument {
+  title: string;
+  knowledgeBaseName: string | null;
+  similarity: number;
+  content: string;
+}
+
 export interface SQLGenerationResult {
   sql: string;
   explanation: string;
@@ -169,6 +184,10 @@ export interface SQLGenerationResult {
   columnsUsed: string[];
   confidence: number;
   alternatives?: SQLAlternative[];
+  references?: {
+    tables: ReferenceTable[];
+    documents: ReferenceDocument[];
+  };
 }
 
 async function retrieveRelevantTables(
@@ -524,6 +543,48 @@ function parseLLMResponse(response: string): SQLGenerationResult {
   return result;
 }
 
+export interface RetrievalContext {
+  tables: TableMetadata[];
+  relations: RelationMetadata[];
+  searchResults: SearchResult[];
+}
+
+export async function retrieveContextForQuery(
+  userQuery: string,
+  knowledgeBaseId?: string
+): Promise<RetrievalContext> {
+  const { tables, relations, searchResults } = await retrieveRelevantTables(
+    userQuery,
+    knowledgeBaseId
+  );
+
+  return { tables, relations, searchResults };
+}
+
+function buildReferences(
+  tables: TableMetadata[],
+  searchResults: SearchResult[],
+  tablesUsed: string[]
+): { tables: ReferenceTable[]; documents: ReferenceDocument[] } {
+  const referenceTables: ReferenceTable[] = tables
+    .filter((t) => tablesUsed.includes(t.name) || tablesUsed.length === 0)
+    .map((t) => ({
+      name: t.name,
+      comment: t.tableComment || null,
+      columns: t.columns.slice(0, 5).map((c) => c.name),
+      reason: "语义检索匹配，与需求相关度高",
+    }));
+
+  const referenceDocuments: ReferenceDocument[] = searchResults.map((r) => ({
+    title: r.documentTitle,
+    knowledgeBaseName: r.knowledgeBaseName,
+    similarity: r.similarity,
+    content: r.content,
+  }));
+
+  return { tables: referenceTables, documents: referenceDocuments };
+}
+
 export async function generateSQLWithRAG(
   userQuery: string,
   options: {
@@ -553,6 +614,7 @@ export async function generateSQLWithRAG(
       tablesUsed: [],
       columnsUsed: [],
       confidence: 0,
+      references: { tables: [], documents: [] },
     };
   }
 
@@ -590,6 +652,8 @@ export async function generateSQLWithRAG(
   console.log(`[SQL RAG] LLM响应长度: ${responseContent.length}`);
 
   const result = parseLLMResponse(responseContent);
+
+  result.references = buildReferences(tables, searchResults, result.tablesUsed);
 
   console.log(
     `[SQL RAG] SQL生成完成，使用了 ${result.tablesUsed.length} 个表，置信度: ${(result.confidence * 100).toFixed(1)}%`

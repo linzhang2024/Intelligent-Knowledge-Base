@@ -124,7 +124,7 @@ export default function DashboardPage() {
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-200"
               >
                 <span className="mr-2">💬</span>
-                智能问答
+                知识库问答
               </Link>
               <Link
                 href="/report-sql"

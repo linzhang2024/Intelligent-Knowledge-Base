@@ -1,6 +1,12 @@
-import { createReadStream, ReadStream } from "fs";
+import { createReadStream, readFileSync, ReadStream } from "fs";
 import { createInterface } from "readline";
+import { PassThrough, Transform } from "stream";
+import * as iconv from "iconv-lite";
+import * as chardet from "chardet";
 import { ParsedTable, SQLParseResult, ParseError, SQLDialect } from "../sqlParser/types";
+import { EncodingType, CHINESE_ENCODINGS } from "@/lib/encodingUtils";
+
+export { EncodingType };
 
 const MULTI_LINE_COMMENT_REGEX = /\/\*[\s\S]*?\*\//g;
 const SINGLE_LINE_COMMENT_REGEX = /--.*$/gm;
@@ -47,15 +53,69 @@ export class SQLStreamParser {
     this.onProgress = onProgress;
   }
 
+  private detectFileEncoding(filePath: string, sampleSize: number = 64 * 1024): EncodingType {
+    try {
+      const sampleBuffer = readFileSync(filePath, { 
+        flag: 'r', 
+        encoding: null 
+      } as any).slice(0, sampleSize);
+      
+      const detected = chardet.detect(sampleBuffer);
+      
+      if (!detected) {
+        return "utf-8";
+      }
+
+      const detectedLower = detected.toLowerCase();
+
+      if (detectedLower === "gbk" || detectedLower === "cp936") {
+        return "gbk";
+      } else if (detectedLower === "gb2312") {
+        return "gb2312";
+      } else if (detectedLower === "big5" || detectedLower === "cp950") {
+        return "big5";
+      } else if (detectedLower === "utf-8" || detectedLower === "utf8") {
+        return "utf-8";
+      } else if (detectedLower === "utf-16le" || detectedLower === "utf16le") {
+        return "utf-16le";
+      } else if (detectedLower === "utf-16be" || detectedLower === "utf16be") {
+        return "utf-16be";
+      }
+
+      return "utf-8";
+    } catch (error) {
+      console.warn("[SQL流式解析] 编码检测失败，使用默认 UTF-8:", error);
+      return "utf-8";
+    }
+  }
+
+  private createDecodedStream(
+    filePath: string, 
+    encoding: EncodingType, 
+    chunkSize: number = 64 * 1024
+  ): NodeJS.ReadableStream {
+    const rawStream = createReadStream(filePath, {
+      highWaterMark: chunkSize,
+    });
+
+    if (CHINESE_ENCODINGS.has(encoding) || encoding === "utf-16le" || encoding === "utf-16be") {
+      console.log(`[SQL流式解析] 使用编码转换: ${encoding} -> UTF-8`);
+      const decodeStream = iconv.decodeStream(encoding);
+      return rawStream.pipe(decodeStream);
+    }
+
+    return rawStream.setEncoding("utf-8");
+  }
+
   async parseFromFile(filePath: string, chunkSize: number = 64 * 1024): Promise<StreamParseResult> {
+    const encoding = this.detectFileEncoding(filePath);
+    console.log(`[SQL流式解析] 检测到文件编码: ${encoding}`);
+
     return new Promise((resolve, reject) => {
-      const readStream = createReadStream(filePath, {
-        encoding: "utf-8",
-        highWaterMark: chunkSize,
-      });
+      const decodedStream = this.createDecodedStream(filePath, encoding, chunkSize);
 
       const rl = createInterface({
-        input: readStream,
+        input: decodedStream,
         crlfDelay: Infinity,
       });
 

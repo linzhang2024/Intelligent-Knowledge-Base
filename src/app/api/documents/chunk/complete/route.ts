@@ -53,8 +53,8 @@ type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
 
 function createChunkProgressCallback(uploadId: string): ChunkProgressCallback {
   return (progress) => {
-    const baseProgress = 50;
-    const progressRange = 40;
+    const baseProgress = 80;
+    const progressRange = 5;
     
     const calculatedProgress = baseProgress + (progress.progress * progressRange / 100);
     
@@ -257,7 +257,7 @@ export async function POST(request: NextRequest) {
         
         updateUploadProgress(uploadId, {
           stage: "parsing",
-          progress: 25,
+          progress: 55,
           message: "正在将 SQL 拆分为 DDL 逻辑块...",
         });
         
@@ -265,7 +265,7 @@ export async function POST(request: NextRequest) {
           sqlParseProgress = { ...progress };
           
           const linesProgress = Math.min(progress.linesProcessed / 1000, 1);
-          const parsingProgress = 20 + linesProgress * 30;
+          const parsingProgress = 50 + linesProgress * 25;
           
           updateUploadProgress(uploadId, {
             stage: "parsing",
@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
 
       updateUploadProgress(uploadId, {
         stage: "parsing",
-        progress: 45,
+        progress: 75,
         message: "文档解析完成",
       });
 
@@ -322,7 +322,7 @@ export async function POST(request: NextRequest) {
       
       updateUploadProgress(uploadId, {
         stage: "chunking",
-        progress: 48,
+        progress: 78,
         message: `已创建 ${textChunks.length} 个文本片段，准备写入数据库...`,
         totalItems: textChunks.length,
       });

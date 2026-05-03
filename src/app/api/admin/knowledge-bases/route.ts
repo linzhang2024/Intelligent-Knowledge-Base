@@ -37,18 +37,37 @@ export async function GET(request: NextRequest) {
               email: true,
             },
           },
-          _count: {
-            select: { documents: true },
+          documents: {
+            where: { deletedAt: null },
+            select: { id: true },
+          },
+          documentLinks: {
+            include: {
+              document: {
+                where: { deletedAt: null },
+                select: { id: true },
+              },
+            },
           },
         },
       }),
     ]);
 
-    const serializedKnowledgeBases = knowledgeBases.map((kb) => ({
-      ...kb,
-      documentCount: kb._count.documents,
-      _count: undefined,
-    }));
+    const serializedKnowledgeBases = knowledgeBases.map((kb) => {
+      const oldDocIds = kb.documents.map((d) => d.id);
+      const newDocIds = kb.documentLinks
+        .filter((link) => link.document)
+        .map((link) => link.document!.id);
+      
+      const allDocIds = [...new Set([...oldDocIds, ...newDocIds])];
+      
+      return {
+        ...kb,
+        documentCount: allDocIds.length,
+        documents: undefined,
+        documentLinks: undefined,
+      };
+    });
 
     return NextResponse.json(
       {
@@ -120,19 +139,36 @@ export async function POST(request: NextRequest) {
             email: true,
           },
         },
-        _count: {
-          select: { documents: true },
+        documents: {
+          where: { deletedAt: null },
+          select: { id: true },
+        },
+        documentLinks: {
+          include: {
+            document: {
+              where: { deletedAt: null },
+              select: { id: true },
+            },
+          },
         },
       },
     });
+
+    const oldDocIds = newKnowledgeBase.documents.map((d) => d.id);
+    const newDocIds = newKnowledgeBase.documentLinks
+      .filter((link) => link.document)
+      .map((link) => link.document!.id);
+    
+    const allDocIds = [...new Set([...oldDocIds, ...newDocIds])];
 
     return NextResponse.json(
       {
         message: "知识库创建成功",
         knowledgeBase: {
           ...newKnowledgeBase,
-          documentCount: newKnowledgeBase._count.documents,
-          _count: undefined,
+          documentCount: allDocIds.length,
+          documents: undefined,
+          documentLinks: undefined,
         },
       },
       { status: 201 }

@@ -21,8 +21,17 @@ export async function GET(
             email: true,
           },
         },
-        _count: {
-          select: { documents: true },
+        documents: {
+          where: { deletedAt: null },
+          select: { id: true },
+        },
+        documentLinks: {
+          include: {
+            document: {
+              where: { deletedAt: null },
+              select: { id: true },
+            },
+          },
         },
       },
     });
@@ -34,12 +43,20 @@ export async function GET(
       );
     }
 
+    const oldDocIds = knowledgeBase.documents.map((d) => d.id);
+    const newDocIds = knowledgeBase.documentLinks
+      .filter((link) => link.document)
+      .map((link) => link.document!.id);
+    
+    const allDocIds = [...new Set([...oldDocIds, ...newDocIds])];
+
     return NextResponse.json(
       {
         knowledgeBase: {
           ...knowledgeBase,
-          documentCount: knowledgeBase._count.documents,
-          _count: undefined,
+          documentCount: allDocIds.length,
+          documents: undefined,
+          documentLinks: undefined,
         },
       },
       { status: 200 }
@@ -140,19 +157,36 @@ export async function PATCH(
             email: true,
           },
         },
-        _count: {
-          select: { documents: true },
+        documents: {
+          where: { deletedAt: null },
+          select: { id: true },
+        },
+        documentLinks: {
+          include: {
+            document: {
+              where: { deletedAt: null },
+              select: { id: true },
+            },
+          },
         },
       },
     });
+
+    const oldDocIds = updatedKnowledgeBase.documents.map((d) => d.id);
+    const newDocIds = updatedKnowledgeBase.documentLinks
+      .filter((link) => link.document)
+      .map((link) => link.document!.id);
+    
+    const allDocIds = [...new Set([...oldDocIds, ...newDocIds])];
 
     return NextResponse.json(
       {
         message: "知识库更新成功",
         knowledgeBase: {
           ...updatedKnowledgeBase,
-          documentCount: updatedKnowledgeBase._count.documents,
-          _count: undefined,
+          documentCount: allDocIds.length,
+          documents: undefined,
+          documentLinks: undefined,
         },
       },
       { status: 200 }
@@ -199,8 +233,17 @@ export async function DELETE(
     const targetKnowledgeBase = await prisma.knowledgeBase.findUnique({
       where: { id: knowledgeBaseId },
       include: {
-        _count: {
-          select: { documents: true },
+        documents: {
+          where: { deletedAt: null },
+          select: { id: true },
+        },
+        documentLinks: {
+          include: {
+            document: {
+              where: { deletedAt: null },
+              select: { id: true },
+            },
+          },
         },
       },
     });
@@ -212,7 +255,14 @@ export async function DELETE(
       );
     }
 
-    if (targetKnowledgeBase._count.documents > 0) {
+    const oldDocIds = targetKnowledgeBase.documents.map((d) => d.id);
+    const newDocIds = targetKnowledgeBase.documentLinks
+      .filter((link) => link.document)
+      .map((link) => link.document!.id);
+    
+    const allDocIds = [...new Set([...oldDocIds, ...newDocIds])];
+
+    if (allDocIds.length > 0) {
       return NextResponse.json(
         { message: "该知识库下还有文档，无法删除，请先转移或删除文档" },
         { status: 400 }

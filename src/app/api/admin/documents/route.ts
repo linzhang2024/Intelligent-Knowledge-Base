@@ -34,14 +34,34 @@ export async function GET(request: NextRequest) {
     }
 
     if (knowledgeBaseId) {
-      where.knowledgeBaseId = knowledgeBaseId;
+      where.OR = [
+        { knowledgeBaseId },
+        {
+          knowledgeBaseLinks: {
+            some: {
+              knowledgeBaseId,
+            },
+          },
+        },
+      ];
     }
 
     if (search) {
-      where.OR = [
-        { title: { contains: search } },
-        { content: { contains: search } },
-      ];
+      if (where.OR) {
+        where.AND = [
+          {
+            OR: [
+              { title: { contains: search } },
+              { content: { contains: search } },
+            ],
+          },
+        ];
+      } else {
+        where.OR = [
+          { title: { contains: search } },
+          { content: { contains: search } },
+        ];
+      }
     }
 
     const [total, documents] = await Promise.all([
@@ -65,14 +85,38 @@ export async function GET(request: NextRequest) {
               name: true,
             },
           },
+          knowledgeBaseLinks: {
+            include: {
+              knowledgeBase: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
         },
       }),
     ]);
 
-    const serializedDocuments = documents.map((doc) => ({
-      ...doc,
-      fileSize: doc.fileSize?.toString() || null,
-    }));
+    const serializedDocuments = documents.map((doc) => {
+      const allKnowledgeBases = [
+        ...(doc.knowledgeBase ? [doc.knowledgeBase] : []),
+        ...doc.knowledgeBaseLinks.map((link) => link.knowledgeBase),
+      ];
+
+      const uniqueKnowledgeBases = allKnowledgeBases.filter(
+        (kb, index, self) =>
+          index === self.findIndex((t) => t.id === kb.id)
+      );
+
+      return {
+        ...doc,
+        fileSize: doc.fileSize?.toString() || null,
+        knowledgeBases: uniqueKnowledgeBases,
+        knowledgeBaseLinks: undefined,
+      };
+    });
 
     return NextResponse.json(
       {

@@ -8,78 +8,94 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String
-  name          String?
-  role          String    @default("VIEWER")
-  status        String    @default("PENDING")
-  avatar        String?
-  profile       String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String?
+  role      String    @default("VIEWER")
+  status    String    @default("PENDING")
+  avatar    String?
+  profile   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-  documents     Document[]
+  documents      Document[]
   knowledgeBases KnowledgeBase[]
 
   @@map("users")
 }
 
 model KnowledgeBase {
-  id            String    @id @default(cuid())
-  name          String
-  description   String?
-  visibility    String    @default("PRIVATE")
-  ownerId       String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  visibility  String   @default("PRIVATE")
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  documents     Document[]
+  owner          User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  documents      Document[]
+  documentLinks  KnowledgeBaseDocument[]
   databaseTables DatabaseTable[]
 
   @@map("knowledge_bases")
 }
 
 model Document {
-  id              String      @id @default(cuid())
+  id              String    @id @default(cuid())
   title           String
   content         String?
   fileUrl         String?
   fileType        String?
   fileSize        BigInt?
-  status          String      @default("DRAFT")
+  status          String    @default("DRAFT")
   authorId        String?
   knowledgeBaseId String?
   vectorId        String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
 
-  author          User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
-  chunks          DocumentChunk[]
-  databaseTables  DatabaseTable[]
+  author             User?                   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  knowledgeBase      KnowledgeBase?          @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
+  knowledgeBaseLinks KnowledgeBaseDocument[]
+  chunks             DocumentChunk[]
+  databaseTables     DatabaseTable[]
 
   @@map("documents")
 }
 
 model DocumentChunk {
-  id              String      @id @default(cuid())
-  documentId      String
-  index           Int
-  content         String
-  vectorId        String?
-  embedding       String?
-  embeddingModel  String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id             String   @id @default(cuid())
+  documentId     String
+  index          Int
+  content        String
+  vectorId       String?
+  embedding      String?
+  embeddingModel String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  document        Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, index])
   @@map("document_chunks")
+}
+
+model KnowledgeBaseDocument {
+  id              String   @id @default(cuid())
+  knowledgeBaseId String
+  documentId      String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document      Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([knowledgeBaseId, documentId])
+  @@map("knowledge_base_documents")
 }
 
 model SystemConfig {
@@ -94,103 +110,103 @@ model SystemConfig {
 }
 
 model DatabaseTable {
-  id              String        @id @default(cuid())
+  id              String   @id @default(cuid())
   name            String
   schemaName      String?
   tableComment    String?
   databaseName    String?
   knowledgeBaseId String?
   documentId      String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  columns         TableColumn[]
-  relationsFrom   TableRelation[] @relation("RelationFromTable")
-  relationsTo     TableRelation[] @relation("RelationToTable")
-  knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
-  document        Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  columns       TableColumn[]
+  relationsFrom TableRelation[] @relation("RelationFromTable")
+  relationsTo   TableRelation[] @relation("RelationToTable")
+  knowledgeBase KnowledgeBase?  @relation(fields: [knowledgeBaseId], references: [id], onDelete: SetNull)
+  document      Document?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
 
   @@unique([name, schemaName, databaseName, knowledgeBaseId])
   @@map("database_tables")
 }
 
 model TableColumn {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   tableId         String
   name            String
   dataType        String
   columnType      String?
-  isNullable      Boolean   @default(true)
-  isPrimaryKey    Boolean   @default(false)
-  isAutoIncrement Boolean   @default(false)
+  isNullable      Boolean  @default(true)
+  isPrimaryKey    Boolean  @default(false)
+  isAutoIncrement Boolean  @default(false)
   defaultValue    String?
   columnComment   String?
   ordinalPosition Int
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  table           DatabaseTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  table DatabaseTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
   @@unique([tableId, name])
   @@map("table_columns")
 }
 
 model TableRelation {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   fromTableId     String
   fromColumnName  String
   toTableId       String
   toColumnName    String
-  relationType    String    @default("ONE_TO_MANY")
+  relationType    String   @default("ONE_TO_MANY")
   constraintName  String?
   joinCondition   String?
   knowledgeBaseId String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  fromTable       DatabaseTable @relation("RelationFromTable", fields: [fromTableId], references: [id], onDelete: Cascade)
-  toTable         DatabaseTable @relation("RelationToTable", fields: [toTableId], references: [id], onDelete: Cascade)
+  fromTable DatabaseTable @relation("RelationFromTable", fields: [fromTableId], references: [id], onDelete: Cascade)
+  toTable   DatabaseTable @relation("RelationToTable", fields: [toTableId], references: [id], onDelete: Cascade)
 
   @@map("table_relations")
 }
 
 model SQLQuery {
-  id              String    @id @default(cuid())
-  query           String
-  queryType       String
-  description     String?
-  tables          String?
-  columns         String?
-  conditions      String?
-  groupBys        String?
-  orderBys        String?
-  having          String?
-  limit           Int?
-  offset          Int?
-  knowledgeBaseId String?
-  userId          String?
-  sourceTables    String?
-  joinConditions  String?
-  explanation     String?
+  id               String   @id @default(cuid())
+  query            String
+  queryType        String
+  description      String?
+  tables           String?
+  columns          String?
+  conditions       String?
+  groupBys         String?
+  orderBys         String?
+  having           String?
+  limit            Int?
+  offset           Int?
+  knowledgeBaseId  String?
+  userId           String?
+  sourceTables     String?
+  joinConditions   String?
+  explanation      String?
   validationErrors String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@map("sql_queries")
 }
 
 model QueryHistory {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   userQuery       String
   generatedSQL    String
   explanation     String?
   tablesUsed      String?
   executionResult String?
-  isSuccess       Boolean   @default(false)
+  isSuccess       Boolean  @default(false)
   feedback        String?
   knowledgeBaseId String?
   userId          String?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime @default(now())
 
   @@map("query_history")
 }

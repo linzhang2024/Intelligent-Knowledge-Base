@@ -2,16 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 
-export const DOCUMENT_STATUS = {
-  DRAFT: "DRAFT",
-  PUBLISHED: "PUBLISHED",
-  ARCHIVED: "ARCHIVED",
-} as const;
-
-export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
-
-const VALID_STATUSES = Object.values(DOCUMENT_STATUS);
-
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -24,19 +14,6 @@ export async function GET(
     const document = await prisma.document.findUnique({
       where: { id: documentId, deletedAt: null },
       include: {
-        author: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        knowledgeBase: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
         knowledgeBaseLinks: {
           include: {
             knowledgeBase: {
@@ -47,13 +24,10 @@ export async function GET(
             },
           },
         },
-        chunks: {
-          orderBy: { index: "asc" as const },
+        knowledgeBase: {
           select: {
             id: true,
-            index: true,
-            content: true,
-            createdAt: true,
+            name: true,
           },
         },
       },
@@ -66,29 +40,20 @@ export async function GET(
       );
     }
 
-    const allKnowledgeBases = [
+    const knowledgeBases = [
       ...(document.knowledgeBase ? [document.knowledgeBase] : []),
       ...document.knowledgeBaseLinks.map((link) => link.knowledgeBase),
     ];
 
-    const uniqueKnowledgeBases = allKnowledgeBases.filter(
+    const uniqueKnowledgeBases = knowledgeBases.filter(
       (kb, index, self) =>
         index === self.findIndex((t) => t.id === kb.id)
     );
 
-    const serializedDocument = {
-      ...document,
-      fileSize: document.fileSize?.toString() || null,
-      knowledgeBases: uniqueKnowledgeBases,
-      knowledgeBaseLinks: undefined,
-      chunks: document.chunks.map(chunk => ({
-        ...chunk,
-      })),
-    };
-
     return NextResponse.json(
       {
-        document: serializedDocument,
+        documentId,
+        knowledgeBases: uniqueKnowledgeBases,
       },
       { status: 200 }
     );
@@ -114,15 +79,15 @@ export async function GET(
         );
       }
     }
-    console.error("获取文档详情失败:", error);
+    console.error("获取文档关联知识库失败:", error);
     return NextResponse.json(
-      { message: "获取文档详情失败，请稍后重试" },
+      { message: "获取文档关联知识库失败，请稍后重试" },
       { status: 500 }
     );
   }
 }
 
-export async function PATCH(
+export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -131,11 +96,11 @@ export async function PATCH(
 
     const documentId = params.id;
 
-    const targetDocument = await prisma.document.findUnique({
+    const document = await prisma.document.findUnique({
       where: { id: documentId, deletedAt: null },
     });
 
-    if (!targetDocument) {
+    if (!document) {
       return NextResponse.json(
         { message: "文档不存在" },
         { status: 404 }
@@ -143,52 +108,58 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { status, title, content } = body;
+    const { knowledgeBaseId, knowledgeBaseIds } = body;
 
-    const updateData: Record<string, unknown> = {};
+    const idsToAdd: string[] = [];
 
-    if (status !== undefined) {
-      if (!VALID_STATUSES.includes(status)) {
-        return NextResponse.json(
-          { message: `无效的状态值，有效值为: ${VALID_STATUSES.join(", ")}` },
-          { status: 400 }
-        );
-      }
-      updateData.status = status;
+    if (knowledgeBaseId) {
+      idsToAdd.push(knowledgeBaseId);
     }
 
-    if (title !== undefined) {
-      updateData.title = title;
+    if (knowledgeBaseIds && Array.isArray(knowledgeBaseIds)) {
+      idsToAdd.push(...knowledgeBaseIds);
     }
 
-    if (content !== undefined) {
-      updateData.content = content;
-    }
-
-    if (Object.keys(updateData).length === 0) {
+    if (idsToAdd.length === 0) {
       return NextResponse.json(
-        { message: "未提供任何可更新的字段" },
+        { message: "请提供知识库ID" },
         { status: 400 }
       );
     }
 
-    const updatedDocument = await prisma.document.update({
+    const existingKnowledgeBases = await prisma.knowledgeBase.findMany({
+      where: { id: { in: idsToAdd } },
+      select: { id: true },
+    });
+
+    const existingIds = existingKnowledgeBases.map((kb) => kb.id);
+    const invalidIds = idsToAdd.filter((id) => !existingIds.includes(id));
+
+    if (invalidIds.length > 0) {
+      return NextResponse.json(
+        { message: `知识库不存在: ${invalidIds.join(", ")}` },
+        { status: 404 }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const kbId of existingIds) {
+        try {
+          await tx.knowledgeBaseDocument.create({
+            data: {
+              documentId,
+              knowledgeBaseId: kbId,
+            },
+          });
+        } catch (e) {
+          console.log(`文档 ${documentId} 已关联知识库 ${kbId}，跳过`);
+        }
+      }
+    });
+
+    const updatedDocument = await prisma.document.findUnique({
       where: { id: documentId },
-      data: updateData,
       include: {
-        author: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-        knowledgeBase: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
         knowledgeBaseLinks: {
           include: {
             knowledgeBase: {
@@ -199,30 +170,30 @@ export async function PATCH(
             },
           },
         },
+        knowledgeBase: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
-    const allKnowledgeBases = [
-      ...(updatedDocument.knowledgeBase ? [updatedDocument.knowledgeBase] : []),
-      ...updatedDocument.knowledgeBaseLinks.map((link) => link.knowledgeBase),
+    const knowledgeBases = [
+      ...(updatedDocument?.knowledgeBase ? [updatedDocument.knowledgeBase] : []),
+      ...(updatedDocument?.knowledgeBaseLinks.map((link) => link.knowledgeBase) || []),
     ];
 
-    const uniqueKnowledgeBases = allKnowledgeBases.filter(
+    const uniqueKnowledgeBases = knowledgeBases.filter(
       (kb, index, self) =>
         index === self.findIndex((t) => t.id === kb.id)
     );
 
-    const serializedDocument = {
-      ...updatedDocument,
-      fileSize: updatedDocument.fileSize?.toString() || null,
-      knowledgeBases: uniqueKnowledgeBases,
-      knowledgeBaseLinks: undefined,
-    };
-
     return NextResponse.json(
       {
-        message: "文档更新成功",
-        document: serializedDocument,
+        message: "文档已成功添加到知识库",
+        documentId,
+        knowledgeBases: uniqueKnowledgeBases,
       },
       { status: 200 }
     );
@@ -248,9 +219,9 @@ export async function PATCH(
         );
       }
     }
-    console.error("更新文档失败:", error);
+    console.error("添加文档到知识库失败:", error);
     return NextResponse.json(
-      { message: "更新文档失败，请稍后重试" },
+      { message: "添加文档到知识库失败，请稍后重试" },
       { status: 500 }
     );
   }
@@ -265,38 +236,81 @@ export async function DELETE(
 
     const documentId = params.id;
 
-    const targetDocument = await prisma.document.findUnique({
+    const document = await prisma.document.findUnique({
       where: { id: documentId, deletedAt: null },
-      include: {
-        chunks: true,
-      },
     });
 
-    if (!targetDocument) {
+    if (!document) {
       return NextResponse.json(
         { message: "文档不存在" },
         { status: 404 }
       );
     }
 
-    await prisma.$transaction(async (tx) => {
-      const chunkCount = targetDocument.chunks.length;
-      if (chunkCount > 0) {
-        await tx.documentChunk.deleteMany({
-          where: { documentId },
-        });
-        console.log(`[文档删除] 已删除文档 "${targetDocument.title}" 的 ${chunkCount} 个关联切片`);
-      }
+    const body = await request.json();
+    const { knowledgeBaseId, knowledgeBaseIds } = body;
 
-      await tx.document.update({
-        where: { id: documentId },
-        data: { deletedAt: new Date() },
-      });
+    const idsToRemove: string[] = [];
+
+    if (knowledgeBaseId) {
+      idsToRemove.push(knowledgeBaseId);
+    }
+
+    if (knowledgeBaseIds && Array.isArray(knowledgeBaseIds)) {
+      idsToRemove.push(...knowledgeBaseIds);
+    }
+
+    if (idsToRemove.length === 0) {
+      return NextResponse.json(
+        { message: "请提供要移除的知识库ID" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.knowledgeBaseDocument.deleteMany({
+      where: {
+        documentId,
+        knowledgeBaseId: { in: idsToRemove },
+      },
     });
+
+    const updatedDocument = await prisma.document.findUnique({
+      where: { id: documentId },
+      include: {
+        knowledgeBaseLinks: {
+          include: {
+            knowledgeBase: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        knowledgeBase: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    const knowledgeBases = [
+      ...(updatedDocument?.knowledgeBase ? [updatedDocument.knowledgeBase] : []),
+      ...(updatedDocument?.knowledgeBaseLinks.map((link) => link.knowledgeBase) || []),
+    ];
+
+    const uniqueKnowledgeBases = knowledgeBases.filter(
+      (kb, index, self) =>
+        index === self.findIndex((t) => t.id === kb.id)
+    );
 
     return NextResponse.json(
       {
-        message: "文档删除成功",
+        message: "文档已成功从知识库移除",
+        documentId,
+        knowledgeBases: uniqueKnowledgeBases,
       },
       { status: 200 }
     );
@@ -322,9 +336,9 @@ export async function DELETE(
         );
       }
     }
-    console.error("删除文档失败:", error);
+    console.error("从知识库移除文档失败:", error);
     return NextResponse.json(
-      { message: "删除文档失败，请稍后重试" },
+      { message: "从知识库移除文档失败，请稍后重试" },
       { status: 500 }
     );
   }

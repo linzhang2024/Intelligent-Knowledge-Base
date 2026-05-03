@@ -37,6 +37,7 @@ interface Document {
   updatedAt: string;
   author: Author | null;
   knowledgeBase: KnowledgeBase | null;
+  knowledgeBases?: KnowledgeBase[];
   chunks?: DocumentChunk[];
 }
 
@@ -57,6 +58,13 @@ interface PreviewModalState {
 interface DeleteConfirmModalState {
   isOpen: boolean;
   document: Document | null;
+}
+
+interface AddToKnowledgeBaseModalState {
+  isOpen: boolean;
+  document: Document | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -351,6 +359,146 @@ function DeleteConfirmModal({
   );
 }
 
+function AddToKnowledgeBaseModal({
+  isOpen,
+  document,
+  isLoading,
+  error,
+  onClose,
+  onConfirm,
+  allKnowledgeBases,
+  selectedKnowledgeBases,
+  onSelectChange,
+}: AddToKnowledgeBaseModalState & {
+  onClose: () => void;
+  onConfirm: () => void;
+  allKnowledgeBases: KnowledgeBase[];
+  selectedKnowledgeBases: string[];
+  onSelectChange: (kbId: string, checked: boolean) => void;
+}) {
+  if (!isOpen || !document) return null;
+
+  const currentKbIds = document.knowledgeBases?.map((kb) => kb.id) || [];
+  const availableKnowledgeBases = allKnowledgeBases.filter(
+    (kb) => !currentKbIds.includes(kb.id)
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-center justify-center p-4 text-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={onClose}></div>
+        <div className="relative w-full max-w-lg transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-medium text-gray-900">
+              将文档加入知识库
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="mb-4">
+            <p className="text-sm text-gray-600 mb-2">
+              文档: <span className="font-medium text-gray-900">{document.title}</span>
+            </p>
+            {document.knowledgeBases && document.knowledgeBases.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs text-gray-500 mb-1">已加入的知识库:</p>
+                <div className="flex flex-wrap gap-2">
+                  {document.knowledgeBases.map((kb) => (
+                    <span
+                      key={kb.id}
+                      className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800"
+                    >
+                      {kb.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="inline-flex items-center justify-center">
+                <svg
+                  className="animate-spin h-8 w-8 text-indigo-600"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 0 014 12H0c0 3.042 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+              </div>
+              <p className="mt-4 text-sm text-gray-500">加载中...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-8">
+              <div className="text-4xl mb-3">⚠️</div>
+              <p className="text-sm text-red-600 font-medium">{error}</p>
+            </div>
+          ) : availableKnowledgeBases.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-4xl mb-3">📚</div>
+              <p className="text-sm text-gray-600 font-medium">
+                该文档已加入所有可用知识库
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md">
+              {availableKnowledgeBases.map((kb) => (
+                <label
+                  key={kb.id}
+                  className="flex items-center px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedKnowledgeBases.includes(kb.id)}
+                    onChange={(e) => onSelectChange(kb.id, e.target.checked)}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
+                  <span className="ml-3 text-sm text-gray-900">{kb.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-6 flex justify-end space-x-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              取消
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isLoading || selectedKnowledgeBases.length === 0}
+              className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              确认加入
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DocumentsPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -376,6 +524,26 @@ export default function DocumentsPage() {
     isOpen: false,
     document: null,
   });
+  const [allKnowledgeBases, setAllKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [addToKnowledgeBaseModal, setAddToKnowledgeBaseModal] = useState<AddToKnowledgeBaseModalState>({
+    isOpen: false,
+    document: null,
+    isLoading: false,
+    error: null,
+  });
+  const [selectedKnowledgeBases, setSelectedKnowledgeBases] = useState<string[]>([]);
+
+  const fetchAllKnowledgeBases = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/knowledge-bases?limit=1000");
+      if (response.ok) {
+        const data = await response.json();
+        setAllKnowledgeBases(data.knowledgeBases || []);
+      }
+    } catch (err) {
+      console.error("获取知识库列表失败:", err);
+    }
+  }, []);
 
   const fetchDocuments = useCallback(async (page: number, status: string, searchQuery: string) => {
     setLoading(true);
@@ -423,7 +591,80 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     fetchDocuments(1, statusFilter, "");
-  }, [fetchDocuments, statusFilter]);
+    fetchAllKnowledgeBases();
+  }, [fetchDocuments, fetchAllKnowledgeBases, statusFilter]);
+
+  const handleAddToKnowledgeBaseClick = (document: Document) => {
+    setSelectedKnowledgeBases([]);
+    setAddToKnowledgeBaseModal({
+      isOpen: true,
+      document,
+      isLoading: false,
+      error: null,
+    });
+  };
+
+  const handleAddToKnowledgeBaseClose = () => {
+    setAddToKnowledgeBaseModal({
+      isOpen: false,
+      document: null,
+      isLoading: false,
+      error: null,
+    });
+    setSelectedKnowledgeBases([]);
+  };
+
+  const handleSelectKnowledgeBase = (kbId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedKnowledgeBases((prev) => [...prev, kbId]);
+    } else {
+      setSelectedKnowledgeBases((prev) => prev.filter((id) => id !== kbId));
+    }
+  };
+
+  const handleAddToKnowledgeBaseConfirm = async () => {
+    if (!addToKnowledgeBaseModal.document || selectedKnowledgeBases.length === 0) return;
+
+    const documentId = addToKnowledgeBaseModal.document.id;
+    setAddToKnowledgeBaseModal((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const response = await fetch(`/api/admin/documents/${documentId}/knowledge-bases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ knowledgeBaseIds: selectedKnowledgeBases }),
+      });
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "添加失败");
+      }
+
+      const result = await response.json();
+      
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === documentId
+            ? { ...d, knowledgeBases: result.knowledgeBases }
+            : d
+        )
+      );
+
+      alert("文档已成功加入知识库");
+      handleAddToKnowledgeBaseClose();
+    } catch (err) {
+      setAddToKnowledgeBaseModal((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: err instanceof Error ? err.message : "添加失败",
+      }));
+    }
+  };
 
   const handleSearch = () => {
     setSearch(searchInput);
@@ -600,6 +841,17 @@ export default function DocumentsPage() {
         onClose={handleDeleteModalClose}
         onConfirm={handleDeleteConfirm}
       />
+      <AddToKnowledgeBaseModal
+        isOpen={addToKnowledgeBaseModal.isOpen}
+        document={addToKnowledgeBaseModal.document}
+        isLoading={addToKnowledgeBaseModal.isLoading}
+        error={addToKnowledgeBaseModal.error}
+        onClose={handleAddToKnowledgeBaseClose}
+        onConfirm={handleAddToKnowledgeBaseConfirm}
+        allKnowledgeBases={allKnowledgeBases}
+        selectedKnowledgeBases={selectedKnowledgeBases}
+        onSelectChange={handleSelectKnowledgeBase}
+      />
 
       <AdminHeader title="文档管理" showBackButton={false} showNavMenu={true} />
 
@@ -741,8 +993,19 @@ export default function DocumentsPage() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {doc.knowledgeBase?.name || "--"}
+                          <div className="flex flex-wrap gap-1">
+                            {doc.knowledgeBases && doc.knowledgeBases.length > 0 ? (
+                              doc.knowledgeBases.map((kb) => (
+                                <span
+                                  key={kb.id}
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
+                                >
+                                  {kb.name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-sm text-gray-500">--</span>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -763,6 +1026,13 @@ export default function DocumentsPage() {
                               className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               预览内容
+                            </button>
+                            <button
+                              onClick={() => handleAddToKnowledgeBaseClick(doc)}
+                              disabled={actionLoading === doc.id}
+                              className="inline-flex items-center px-3 py-1.5 border border-indigo-300 rounded-md text-sm font-medium text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              加入知识库
                             </button>
                             <select
                               value={doc.status}

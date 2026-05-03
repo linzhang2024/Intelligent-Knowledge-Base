@@ -61,23 +61,76 @@ const SQL_GENERATION_SYSTEM_PROMPT = `你是一个专业的SQL开发专家，擅
    - 日期过滤使用标准SQL日期函数
    - 按月/年统计使用 DATE_FORMAT 或 EXTRACT
 
+## 输出要求
+
+请生成**3个不同的SQL备选方案**，每个方案都包含SQL语句和解释。
+
+### 方案设计原则：
+- **方案1（推荐方案）**：最直接、最高效的实现方式，使用标准的JOIN和聚合
+- **方案2（优化方案）**：考虑性能优化，可能使用不同的JOIN顺序、子查询或窗口函数
+- **方案3（替代方案）**：提供另一种思路，可能使用不同的表关联方式或聚合策略
+
 ## 输出格式
 
-你的回答必须包含以下三个部分，用明确的分隔符区分：
+你的回答必须严格按照以下格式输出：
 
-### 【SQL查询】
+### 【方案1：推荐方案】
+**设计思路**：[简要说明这个方案的设计思路]
+
 \`\`\`sql
--- 你的SQL语句
+-- SQL语句
 SELECT ...
 \`\`\`
 
-### 【逻辑解释】
-用简洁的中文解释SQL的逻辑：
+**逻辑解释**：
 1. 查询哪些表
 2. 关联条件是什么
 3. 筛选条件有哪些
 4. 聚合/分组方式
 5. 排序/分页
+
+---
+
+### 【方案2：优化方案】
+**设计思路**：[简要说明这个方案的设计思路]
+
+\`\`\`sql
+-- SQL语句
+SELECT ...
+\`\`\`
+
+**逻辑解释**：
+1. 查询哪些表
+2. 关联条件是什么
+3. 筛选条件有哪些
+4. 聚合/分组方式
+5. 排序/分页
+
+---
+
+### 【方案3：替代方案】
+**设计思路**：[简要说明这个方案的设计思路]
+
+\`\`\`sql
+-- SQL语句
+SELECT ...
+\`\`\`
+
+**逻辑解释**：
+1. 查询哪些表
+2. 关联条件是什么
+3. 筛选条件有哪些
+4. 聚合/分组方式
+5. 排序/分页
+
+---
+
+### 【方案对比】
+| 方案 | 复杂度 | 性能预估 | 适用场景 |
+|------|--------|----------|----------|
+| 方案1 | 低 | 高 | 大多数场景推荐 |
+| 方案2 | 中 | 很高 | 大数据量场景 |
+| 方案3 | 中 | 中 | 需要不同聚合策略时 |
 
 ### 【注意事项】
 - 如果使用了所有需要的字段，说明"所有字段均已在知识库中找到"
@@ -100,6 +153,14 @@ export interface SQLElements {
   limit?: number;
 }
 
+export interface SQLAlternative {
+  id: number;
+  sql: string;
+  explanation: string;
+  approach: string;
+  confidence: number;
+}
+
 export interface SQLGenerationResult {
   sql: string;
   explanation: string;
@@ -107,6 +168,7 @@ export interface SQLGenerationResult {
   tablesUsed: string[];
   columnsUsed: string[];
   confidence: number;
+  alternatives?: SQLAlternative[];
 }
 
 async function retrieveRelevantTables(
@@ -348,6 +410,49 @@ ${userQuery}
   ];
 }
 
+function extractTablesFromSQL(sql: string): string[] {
+  const tables: string[] = [];
+  const tableMatches = sql.match(/(?:from|join|into|update)\s+`?([a-zA-Z_][a-zA-Z0-9_]*)`?/gi);
+  if (tableMatches) {
+    for (const match of tableMatches) {
+      const tableName = match.replace(/^(?:from|join|into|update)\s+`?/i, "").replace(/`?$/, "");
+      if (!tables.includes(tableName) && !tableName.toLowerCase().includes("select")) {
+        tables.push(tableName);
+      }
+    }
+  }
+  return tables;
+}
+
+function parseSingleAlternative(
+  content: string,
+  id: number,
+  schemeLabel: string
+): SQLAlternative | null {
+  const approachMatch = content.match(/设计思路[：:]\s*([\s\S]*?)(?=\n\s*```sql|$)/i);
+  const approach = approachMatch ? approachMatch[1].trim() : schemeLabel;
+
+  const sqlMatch = content.match(/```sql\s*([\s\S]*?)\s*```/i);
+  const sql = sqlMatch ? sqlMatch[1].trim() : "";
+
+  const explanationMatch = content.match(/逻辑解释[：:]\s*([\s\S]*)/i);
+  const explanation = explanationMatch
+    ? explanationMatch[1].trim()
+    : `这是${schemeLabel}，SQL逻辑已完整展示。`;
+
+  if (!sql) {
+    return null;
+  }
+
+  return {
+    id,
+    sql,
+    explanation,
+    approach,
+    confidence: 0.7,
+  };
+}
+
 function parseLLMResponse(response: string): SQLGenerationResult {
   const result: SQLGenerationResult = {
     sql: "",
@@ -356,21 +461,52 @@ function parseLLMResponse(response: string): SQLGenerationResult {
     tablesUsed: [],
     columnsUsed: [],
     confidence: 0.7,
+    alternatives: [],
   };
 
-  const sqlMatch = response.match(/【SQL查询】\s*```sql\s*([\s\S]*?)\s*```/i);
-  if (sqlMatch) {
-    result.sql = sqlMatch[1].trim();
-  } else {
-    const fallbackSqlMatch = response.match(/```sql\s*([\s\S]*?)\s*```/i);
-    if (fallbackSqlMatch) {
-      result.sql = fallbackSqlMatch[1].trim();
-    }
+  const alternatives: SQLAlternative[] = [];
+
+  const scheme1Match = response.match(/【方案1[：:]\s*([^】]*?)】\s*([\s\S]*?)(?=---|【方案2|$)/i);
+  if (scheme1Match) {
+    const alt = parseSingleAlternative(scheme1Match[2], 1, "推荐方案");
+    if (alt) alternatives.push({ ...alt, confidence: 0.9 });
   }
 
-  const explanationMatch = response.match(/【逻辑解释】([\s]*?)(?=【注意事项】|$)/i);
-  if (explanationMatch) {
-    result.explanation = explanationMatch[1].trim();
+  const scheme2Match = response.match(/【方案2[：:]\s*([^】]*?)】\s*([\s\S]*?)(?=---|【方案3|$)/i);
+  if (scheme2Match) {
+    const alt = parseSingleAlternative(scheme2Match[2], 2, "优化方案");
+    if (alt) alternatives.push({ ...alt, confidence: 0.85 });
+  }
+
+  const scheme3Match = response.match(/【方案3[：:]\s*([^】]*?)】\s*([\s\S]*?)(?=---|【方案对比|【注意事项】|$)/i);
+  if (scheme3Match) {
+    const alt = parseSingleAlternative(scheme3Match[2], 3, "替代方案");
+    if (alt) alternatives.push({ ...alt, confidence: 0.75 });
+  }
+
+  if (alternatives.length > 0) {
+    result.alternatives = alternatives;
+    result.sql = alternatives[0].sql;
+    result.explanation = alternatives[0].explanation;
+    result.tablesUsed = extractTablesFromSQL(alternatives[0].sql);
+    result.confidence = alternatives[0].confidence;
+  } else {
+    const sqlMatch = response.match(/【SQL查询】\s*```sql\s*([\s\S]*?)\s*```/i);
+    if (sqlMatch) {
+      result.sql = sqlMatch[1].trim();
+    } else {
+      const fallbackSqlMatch = response.match(/```sql\s*([\s\S]*?)\s*```/i);
+      if (fallbackSqlMatch) {
+        result.sql = fallbackSqlMatch[1].trim();
+      }
+    }
+
+    const explanationMatch = response.match(/【逻辑解释】([\s]*?)(?=【注意事项】|$)/i);
+    if (explanationMatch) {
+      result.explanation = explanationMatch[1].trim();
+    }
+
+    result.tablesUsed = extractTablesFromSQL(result.sql);
   }
 
   const notesMatch = response.match(/【注意事项】([\s\S]*)$/i);
@@ -382,16 +518,6 @@ function parseLLMResponse(response: string): SQLGenerationResult {
     }
     if (notes.includes("所有字段均已在知识库中找到")) {
       result.confidence = 0.9;
-    }
-  }
-
-  const tableMatches = result.sql.match(/(?:from|join|into|update)\s+`?([a-zA-Z_][a-zA-Z0-9_]*)`?/gi);
-  if (tableMatches) {
-    for (const match of tableMatches) {
-      const tableName = match.replace(/^(?:from|join|into|update)\s+`?/i, "").replace(/`?$/, "");
-      if (!result.tablesUsed.includes(tableName) && !tableName.toLowerCase().includes("select")) {
-        result.tablesUsed.push(tableName);
-      }
     }
   }
 

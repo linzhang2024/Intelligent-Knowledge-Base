@@ -637,7 +637,7 @@ export default function UploadPage() {
               )}
               {knowledgeBaseId && (
                 <p className="mt-1 text-xs text-indigo-600">
-                  💡 选择知识库后，文档将自动进行向量化切片，用于后续的智能问答
+                  💡 选择知识库后，文档将自动进行向量化切片，用于后续的知识库问答
                 </p>
               )}
             </div>

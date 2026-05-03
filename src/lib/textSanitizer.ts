@@ -2,59 +2,110 @@ export interface SanitizeResult {
   text: string;
   hadInvalidSurrogates: boolean;
   invalidPositions: number[];
+  replacementCharCount: number;
+  invalidSurrogateCount: number;
+}
+
+const REPLACEMENT_CHAR = "\uFFFD";
+const REPLACEMENT_CHAR_CODE = 0xFFFD;
+
+function isHighSurrogate(charCode: number): boolean {
+  return charCode >= 0xd800 && charCode <= 0xdbff;
+}
+
+function isLowSurrogate(charCode: number): boolean {
+  return charCode >= 0xdc00 && charCode <= 0xdfff;
+}
+
+function isControlCharacter(charCode: number): boolean {
+  return (
+    (charCode >= 0x0000 && charCode <= 0x0008) ||
+    (charCode >= 0x000b && charCode <= 0x000c) ||
+    (charCode >= 0x000e && charCode <= 0x001f) ||
+    charCode === 0x007f
+  );
 }
 
 export function sanitizeText(text: string): SanitizeResult {
   if (!text || typeof text !== "string") {
-    return { text: "", hadInvalidSurrogates: false, invalidPositions: [] };
+    return { 
+      text: "", 
+      hadInvalidSurrogates: false, 
+      invalidPositions: [],
+      replacementCharCount: 0,
+      invalidSurrogateCount: 0
+    };
   }
 
   const invalidPositions: number[] = [];
   let hadInvalidSurrogates = false;
-  let result = "";
+  let replacementCharCount = 0;
+  let invalidSurrogateCount = 0;
+  const result: string[] = [];
 
   for (let i = 0; i < text.length; i++) {
     const charCode = text.charCodeAt(i);
 
-    if (charCode >= 0xd800 && charCode <= 0xdbff) {
+    if (charCode === REPLACEMENT_CHAR_CODE) {
+      replacementCharCount++;
+      result.push(REPLACEMENT_CHAR);
+      continue;
+    }
+
+    if (isHighSurrogate(charCode)) {
       if (i + 1 < text.length) {
         const nextCharCode = text.charCodeAt(i + 1);
-        if (nextCharCode >= 0xdc00 && nextCharCode <= 0xdfff) {
-          result += text[i] + text[i + 1];
+        if (isLowSurrogate(nextCharCode)) {
+          result.push(text[i] + text[i + 1]);
           i++;
           continue;
         }
       }
       hadInvalidSurrogates = true;
+      invalidSurrogateCount++;
       invalidPositions.push(i);
-      result += "\uFFFD";
+      result.push(REPLACEMENT_CHAR);
       continue;
     }
 
-    if (charCode >= 0xdc00 && charCode <= 0xdfff) {
+    if (isLowSurrogate(charCode)) {
       hadInvalidSurrogates = true;
+      invalidSurrogateCount++;
       invalidPositions.push(i);
-      result += "\uFFFD";
+      result.push(REPLACEMENT_CHAR);
       continue;
     }
 
-    if (
-      (charCode >= 0x0000 && charCode <= 0x0008) ||
-      (charCode >= 0x000b && charCode <= 0x000c) ||
-      (charCode >= 0x000e && charCode <= 0x001f) ||
-      charCode === 0x007f
-    ) {
+    if (isControlCharacter(charCode)) {
       continue;
     }
 
-    result += text[i];
+    result.push(text[i]);
   }
 
   return {
-    text: result,
+    text: result.join(""),
     hadInvalidSurrogates,
     invalidPositions,
+    replacementCharCount,
+    invalidSurrogateCount,
   };
+}
+
+export function hasEncodingIssues(result: SanitizeResult, textLength: number): boolean {
+  if (textLength === 0) return false;
+  
+  const totalIssues = result.replacementCharCount + result.invalidSurrogateCount;
+  const ratio = totalIssues / textLength;
+  
+  return ratio > 0.01;
+}
+
+export function getEncodingIssueRatio(result: SanitizeResult, textLength: number): number {
+  if (textLength === 0) return 0;
+  
+  const totalIssues = result.replacementCharCount + result.invalidSurrogateCount;
+  return totalIssues / textLength;
 }
 
 export function splitLargeChunk(

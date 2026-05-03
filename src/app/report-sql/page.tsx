@@ -29,6 +29,14 @@ interface ColumnInfo {
   columnComment: string | null;
 }
 
+interface SQLAlternative {
+  id: number;
+  sql: string;
+  explanation: string;
+  approach: string;
+  confidence: number;
+}
+
 interface SQLGenerationResult {
   sql: string;
   explanation: string;
@@ -36,6 +44,7 @@ interface SQLGenerationResult {
   tablesUsed: string[];
   columnsUsed: string[];
   confidence: number;
+  alternatives?: SQLAlternative[];
 }
 
 interface ErrorResponse {
@@ -65,6 +74,7 @@ export default function ReportSQLPage() {
   const [errorResponse, setErrorResponse] = useState<ErrorResponse | null>(null);
   const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("mysql");
   const [showTooltip, setShowTooltip] = useState(false);
+  const [selectedAlternativeId, setSelectedAlternativeId] = useState<number>(1);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const resultEndRef = useRef<HTMLDivElement>(null);
@@ -272,14 +282,55 @@ export default function ReportSQLPage() {
     }
   };
 
-  const parseAndSetResult = (content: string) => {
-    const sqlMatch = content.match(/【SQL查询】\s*```sql\s*([\s\S]*?)\s*```/i);
+  const parseSingleAlternative = (
+    content: string,
+    id: number,
+    schemeLabel: string
+  ): SQLAlternative | null => {
+    const approachMatch = content.match(/设计思路[：:]\s*([\s\S]*?)(?=\n\s*```sql|$)/i);
+    const approach = approachMatch ? approachMatch[1].trim() : schemeLabel;
+
+    const sqlMatch = content.match(/```sql\s*([\s\S]*?)\s*```/i);
     const sql = sqlMatch ? sqlMatch[1].trim() : extractSQLFromContent(content);
 
-    const explanationMatch = content.match(/【逻辑解释】([\s\S]*?)(?=【注意事项】|$)/i);
+    const explanationMatch = content.match(/逻辑解释[：:]\s*([\s\S]*)/i);
     const explanation = explanationMatch
       ? explanationMatch[1].trim()
-      : "AI 已完成SQL生成，详情请查看生成的SQL语句。";
+      : `这是${schemeLabel}，SQL逻辑已完整展示。`;
+
+    if (!sql) {
+      return null;
+    }
+
+    return {
+      id,
+      sql,
+      explanation,
+      approach,
+      confidence: 0.7,
+    };
+  };
+
+  const parseAndSetResult = (content: string) => {
+    const alternatives: SQLAlternative[] = [];
+
+    const scheme1Match = content.match(/【方案1[：:]\s*([^】]*?)】\s*([\s\S]*?)(?=---|【方案2|$)/i);
+    if (scheme1Match) {
+      const alt = parseSingleAlternative(scheme1Match[2], 1, "推荐方案");
+      if (alt) alternatives.push({ ...alt, confidence: 0.9 });
+    }
+
+    const scheme2Match = content.match(/【方案2[：:]\s*([^】]*?)】\s*([\s\S]*?)(?=---|【方案3|$)/i);
+    if (scheme2Match) {
+      const alt = parseSingleAlternative(scheme2Match[2], 2, "优化方案");
+      if (alt) alternatives.push({ ...alt, confidence: 0.85 });
+    }
+
+    const scheme3Match = content.match(/【方案3[：:]\s*([^】]*?)】\s*([\s\S]*?)(?=---|【方案对比|【注意事项】|$)/i);
+    if (scheme3Match) {
+      const alt = parseSingleAlternative(scheme3Match[2], 3, "替代方案");
+      if (alt) alternatives.push({ ...alt, confidence: 0.75 });
+    }
 
     const warnings: string[] = [];
     const notesMatch = content.match(/【注意事项】([\s\S]*)$/i);
@@ -290,23 +341,44 @@ export default function ReportSQLPage() {
       }
     }
 
-    const tablesUsed = extractTablesFromSQL(sql);
+    if (alternatives.length > 0) {
+      setGeneratedResult({
+        sql: alternatives[0].sql,
+        explanation: alternatives[0].explanation,
+        warnings,
+        tablesUsed: extractTablesFromSQL(alternatives[0].sql),
+        columnsUsed: [],
+        confidence: alternatives[0].confidence,
+        alternatives,
+      });
+      setSelectedAlternativeId(1);
+    } else {
+      const sqlMatch = content.match(/【SQL查询】\s*```sql\s*([\s\S]*?)\s*```/i);
+      const sql = sqlMatch ? sqlMatch[1].trim() : extractSQLFromContent(content);
 
-    let confidence = 0.7;
-    if (warnings.length === 0 && sql.length > 0) {
-      confidence = 0.9;
-    } else if (warnings.some((w) => w.includes("缺失") || w.includes("未找到"))) {
-      confidence = 0.5;
+      const explanationMatch = content.match(/【逻辑解释】([\s\S]*?)(?=【注意事项】|$)/i);
+      const explanation = explanationMatch
+        ? explanationMatch[1].trim()
+        : "AI 已完成SQL生成，详情请查看生成的SQL语句。";
+
+      const tablesUsed = extractTablesFromSQL(sql);
+
+      let confidence = 0.7;
+      if (warnings.length === 0 && sql.length > 0) {
+        confidence = 0.9;
+      } else if (warnings.some((w) => w.includes("缺失") || w.includes("未找到"))) {
+        confidence = 0.5;
+      }
+
+      setGeneratedResult({
+        sql,
+        explanation,
+        warnings,
+        tablesUsed,
+        columnsUsed: [],
+        confidence,
+      });
     }
-
-    setGeneratedResult({
-      sql,
-      explanation,
-      warnings,
-      tablesUsed,
-      columnsUsed: [],
-      confidence,
-    });
   };
 
   const extractSQLFromContent = (content: string): string => {
@@ -371,8 +443,9 @@ export default function ReportSQLPage() {
   };
 
   const handleCopySQL = () => {
-    if (generatedResult?.sql) {
-      navigator.clipboard.writeText(generatedResult.sql);
+    const sqlToCopy = currentAlternative?.sql || generatedResult?.sql;
+    if (sqlToCopy) {
+      navigator.clipboard.writeText(sqlToCopy);
     }
   };
 
@@ -389,19 +462,43 @@ export default function ReportSQLPage() {
     setGeneratedResult(null);
     setStreamingContent("");
     setError(null);
+    setSelectedAlternativeId(1);
+  };
+
+  const getCurrentAlternative = (): SQLAlternative | null => {
+    if (!generatedResult?.alternatives || generatedResult.alternatives.length === 0) {
+      return null;
+    }
+    return (
+      generatedResult.alternatives.find((a) => a.id === selectedAlternativeId) ||
+      generatedResult.alternatives[0]
+    );
+  };
+
+  const handleAlternativeChange = (id: number) => {
+    setSelectedAlternativeId(id);
   };
 
   useEffect(() => {
     resultEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [streamingContent, generatedResult]);
 
+  const currentAlternative = getCurrentAlternative();
+  const hasAlternatives = generatedResult?.alternatives && generatedResult.alternatives.length > 0;
+
   const displaySQL = isStreaming
     ? extractSQLFromContent(streamingContent) || streamingContent
-    : generatedResult?.sql || "";
+    : currentAlternative?.sql || generatedResult?.sql || "";
 
   const displayExplanation = isStreaming
     ? ""
-    : generatedResult?.explanation || "";
+    : currentAlternative?.explanation || generatedResult?.explanation || "";
+
+  const displayApproach = currentAlternative?.approach || "";
+  const displayConfidence = currentAlternative?.confidence || generatedResult?.confidence || 0;
+  const displayTablesUsed = currentAlternative
+    ? extractTablesFromSQL(currentAlternative.sql)
+    : generatedResult?.tablesUsed || [];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -727,44 +824,75 @@ export default function ReportSQLPage() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <span className="mr-2">📝</span>
-                  生成结果
-                </h2>
-                {generatedResult && (
-                  <div className="flex items-center gap-4 mt-1">
-                    <span className="text-sm text-gray-500">
-                      置信度:{" "}
-                      <span
-                        className={`font-medium ${
-                          generatedResult.confidence >= 0.8
-                            ? "text-green-600"
-                            : generatedResult.confidence >= 0.6
-                            ? "text-yellow-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {(generatedResult.confidence * 100).toFixed(0)}%
-                      </span>
-                    </span>
-                    {generatedResult.tablesUsed.length > 0 && (
-                      <span className="text-sm text-gray-500">
-                        涉及表: {generatedResult.tablesUsed.join(", ")}
-                      </span>
-                    )}
-                  </div>
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <span className="mr-2">📝</span>
+                    生成结果
+                  </h2>
+                </div>
+                {displaySQL && !isStreaming && (
+                  <button
+                    onClick={handleCopySQL}
+                    className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                  >
+                    <span className="mr-2">📋</span>
+                    复制 SQL
+                  </button>
                 )}
               </div>
-              {displaySQL && (
-                <button
-                  onClick={handleCopySQL}
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                >
-                  <span className="mr-2">📋</span>
-                  复制 SQL
-                </button>
+
+              {hasAlternatives && !isStreaming && (
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-sm text-gray-500 mr-2">选择方案:</span>
+                  {generatedResult?.alternatives?.map((alt) => (
+                    <button
+                      key={alt.id}
+                      onClick={() => handleAlternativeChange(alt.id)}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        selectedAlternativeId === alt.id
+                          ? "bg-indigo-600 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      方案{alt.id}
+                      {alt.id === 1 && " (推荐)"}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {displayApproach && !isStreaming && (
+                <div className="mb-2 p-3 bg-indigo-50 rounded-lg">
+                  <span className="text-sm font-medium text-indigo-800">
+                    💡 设计思路: {displayApproach}
+                  </span>
+                </div>
+              )}
+
+              {generatedResult && !isStreaming && (
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-gray-500">
+                    置信度:{" "}
+                    <span
+                      className={`font-medium ${
+                        displayConfidence >= 0.8
+                          ? "text-green-600"
+                          : displayConfidence >= 0.6
+                          ? "text-yellow-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {(displayConfidence * 100).toFixed(0)}%
+                    </span>
+                  </span>
+                  {displayTablesUsed.length > 0 && (
+                    <span className="text-sm text-gray-500">
+                      涉及表: {displayTablesUsed.join(", ")}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
 
@@ -846,7 +974,8 @@ export default function ReportSQLPage() {
                   </div>
 
                   {generatedResult &&
-                    generatedResult.tablesUsed.length > 0 && (
+                    displayTablesUsed.length > 0 &&
+                    !isStreaming && (
                       <div className="border-t border-gray-200 p-6">
                         <h4 className="text-sm font-medium text-gray-700 mb-3">
                           📊 统计信息
@@ -855,19 +984,19 @@ export default function ReportSQLPage() {
                           <div className="p-3 bg-blue-50 rounded-lg text-center">
                             <div className="text-xs text-gray-500">涉及表数</div>
                             <div className="text-lg font-semibold text-blue-700">
-                              {generatedResult.tablesUsed.length}
+                              {displayTablesUsed.length}
                             </div>
                           </div>
                           <div className="p-3 bg-green-50 rounded-lg text-center">
                             <div className="text-xs text-gray-500">置信度</div>
                             <div className="text-lg font-semibold text-green-700">
-                              {(generatedResult.confidence * 100).toFixed(0)}%
+                              {(displayConfidence * 100).toFixed(0)}%
                             </div>
                           </div>
                           <div className="p-3 bg-purple-50 rounded-lg text-center">
                             <div className="text-xs text-gray-500">SQL 长度</div>
                             <div className="text-lg font-semibold text-purple-700">
-                              {generatedResult.sql.length} 字符
+                              {displaySQL.length} 字符
                             </div>
                           </div>
                           <div className="p-3 bg-orange-50 rounded-lg text-center">

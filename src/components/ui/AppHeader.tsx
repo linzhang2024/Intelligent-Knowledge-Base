@@ -180,6 +180,13 @@ export default function AppHeader({
             <TrashIcon className="mr-2" />
             清空
           </button>
+          <Link
+            href="/documents/upload"
+            className={`${buttonBaseClass} ${primaryButtonClass}`}
+          >
+            <UploadIcon className="mr-2" />
+            上传文档
+          </Link>
         </div>
       );
     }

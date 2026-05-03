@@ -1,11 +1,15 @@
 import { Parser, DocumentType, ParseResult, DocumentParseError } from "./types";
-import { readFile } from "fs/promises";
+import { decodeFileWithRetry, cleanText } from "@/lib/encodingUtils";
 
 export const sqlParser: Parser = {
   type: "sql",
   async parse(filePath: string): Promise<string> {
     try {
-      const content = await readFile(filePath, "utf-8");
+      const decodeResult = await decodeFileWithRetry(filePath);
+      
+      console.log(`[SQL解析] 文件编码检测: ${decodeResult.originalEncoding}, 转码: ${decodeResult.hadConversion ? "是" : "否"}, 非法字符: ${decodeResult.invalidByteCount}`);
+      
+      const content = cleanText(decodeResult.text);
       return content;
     } catch (error) {
       if (error instanceof Error) {

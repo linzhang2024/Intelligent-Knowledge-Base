@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
-export const USER_STATUS = {
+const USER_STATUS = {
   PENDING: "PENDING",
   ACTIVE: "ACTIVE",
   BANNED: "BANNED",
 } as const;
 
-export const USER_ROLE = {
+const USER_ROLE = {
   ADMIN: "ADMIN",
   EDITOR: "EDITOR",
   VIEWER: "VIEWER",

@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 
-export const DOCUMENT_STATUS = {
+const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
   PUBLISHED: "PUBLISHED",
   ARCHIVED: "ARCHIVED",
 } as const;
 
-export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
+type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
 
 const VALID_STATUSES = Object.values(DOCUMENT_STATUS);
 

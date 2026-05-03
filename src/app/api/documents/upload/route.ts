@@ -129,14 +129,14 @@ async function processChunksWithErrorHandling(
   };
 }
 
-export const DOCUMENT_STATUS = {
+const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
   PUBLISHED: "PUBLISHED",
   ARCHIVED: "ARCHIVED",
   FAILED: "FAILED",
 } as const;
 
-export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
+type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
 
 export async function POST(request: NextRequest) {
   try {

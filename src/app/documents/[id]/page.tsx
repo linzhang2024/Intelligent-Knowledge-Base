@@ -190,8 +190,8 @@ export default function DocumentDetailPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
-            {document.fileUrl && (
+          {document.fileUrl && (
+            <div className="flex items-center space-x-3">
               <a
                 href={document.fileUrl}
                 target="_blank"
@@ -200,11 +200,8 @@ export default function DocumentDetailPage() {
               >
                 📥 下载附件
               </a>
-            )}
-            <button className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-              ✏️ 编辑
-            </button>
-          </div>
+            </div>
+          )}
         </div>
       </header>
 

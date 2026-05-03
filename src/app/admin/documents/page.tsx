@@ -59,6 +59,13 @@ interface DeleteConfirmModalState {
   document: Document | null;
 }
 
+interface EditModalState {
+  isOpen: boolean;
+  document: Document | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "草稿",
   PUBLISHED: "已发布",
@@ -351,6 +358,123 @@ function DeleteConfirmModal({
   );
 }
 
+interface EditModalProps {
+  isOpen: boolean;
+  document: Document | null;
+  isLoading: boolean;
+  error: string | null;
+  knowledgeBases: KnowledgeBase[];
+  onClose: () => void;
+  onSave: (documentId: string, title: string, knowledgeBaseId: string | null) => void;
+}
+
+function EditModal({
+  isOpen,
+  document,
+  isLoading,
+  error,
+  knowledgeBases,
+  onClose,
+  onSave,
+}: EditModalProps) {
+  const [title, setTitle] = useState("");
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (document) {
+      setTitle(document.title);
+      setKnowledgeBaseId(document.knowledgeBase?.id || null);
+    }
+  }, [document]);
+
+  if (!isOpen || !document) return null;
+
+  const handleSave = () => {
+    if (!title.trim()) {
+      alert("文档名称不能为空");
+      return;
+    }
+    onSave(document.id, title.trim(), knowledgeBaseId);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-screen items-center justify-center p-4 text-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={onClose}></div>
+        <div className="relative w-full max-w-lg transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-medium text-gray-900">
+              编辑文档
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                文档名称
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="请输入文档名称"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                所属知识库
+              </label>
+              <select
+                value={knowledgeBaseId || ""}
+                onChange={(e) => setKnowledgeBaseId(e.target.value || null)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                <option value="">-- 无所属知识库 --</option>
+                {knowledgeBases.map((kb) => (
+                  <option key={kb.id} value={kb.id}>
+                    {kb.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end space-x-3">
+            <button
+              onClick={onClose}
+              disabled={isLoading}
+              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isLoading}
+              className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? "保存中..." : "保存"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DocumentsPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -376,6 +500,25 @@ export default function DocumentsPage() {
     isOpen: false,
     document: null,
   });
+  const [editModal, setEditModal] = useState<EditModalState>({
+    isOpen: false,
+    document: null,
+    isLoading: false,
+    error: null,
+  });
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+
+  const fetchKnowledgeBases = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/knowledge-bases?limit=100");
+      if (response.ok) {
+        const data = await response.json();
+        setKnowledgeBases(data.knowledgeBases || []);
+      }
+    } catch (err) {
+      console.error("获取知识库列表失败:", err);
+    }
+  }, []);
 
   const fetchDocuments = useCallback(async (page: number, status: string, searchQuery: string) => {
     setLoading(true);
@@ -423,7 +566,8 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     fetchDocuments(1, statusFilter, "");
-  }, [fetchDocuments, statusFilter]);
+    fetchKnowledgeBases();
+  }, [fetchDocuments, fetchKnowledgeBases, statusFilter]);
 
   const handleSearch = () => {
     setSearch(searchInput);
@@ -585,6 +729,70 @@ export default function DocumentsPage() {
     }
   };
 
+  const handleEditClick = (document: Document) => {
+    setEditModal({
+      isOpen: true,
+      document,
+      isLoading: false,
+      error: null,
+    });
+  };
+
+  const handleEditClose = () => {
+    setEditModal({
+      isOpen: false,
+      document: null,
+      isLoading: false,
+      error: null,
+    });
+  };
+
+  const handleEditSave = async (documentId: string, title: string, knowledgeBaseId: string | null) => {
+    setEditModal((prev) => ({ ...prev, isLoading: true, error: null }));
+    setActionLoading(documentId);
+
+    try {
+      const response = await fetch(`/api/admin/documents/${documentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, knowledgeBaseId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "更新文档失败");
+      }
+
+      const result = await response.json();
+
+      setDocuments((prev) =>
+        prev.map((d) => {
+          if (d.id === documentId) {
+            const updatedDoc = {
+              ...d,
+              title: result.document.title,
+              knowledgeBase: result.document.knowledgeBase,
+              knowledgeBaseId: result.document.knowledgeBaseId,
+              updatedAt: result.document.updatedAt,
+            };
+            return updatedDoc;
+          }
+          return d;
+        })
+      );
+
+      handleEditClose();
+    } catch (err) {
+      setEditModal((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: err instanceof Error ? err.message : "更新文档失败",
+      }));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <PreviewModal
@@ -599,6 +807,15 @@ export default function DocumentsPage() {
         document={deleteConfirmModal.document}
         onClose={handleDeleteModalClose}
         onConfirm={handleDeleteConfirm}
+      />
+      <EditModal
+        isOpen={editModal.isOpen}
+        document={editModal.document}
+        isLoading={editModal.isLoading}
+        error={editModal.error}
+        knowledgeBases={knowledgeBases}
+        onClose={handleEditClose}
+        onSave={handleEditSave}
       />
 
       <AdminHeader title="文档管理" showBackButton={false} showNavMenu={true} />
@@ -763,6 +980,13 @@ export default function DocumentsPage() {
                               className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               预览内容
+                            </button>
+                            <button
+                              onClick={() => handleEditClick(doc)}
+                              disabled={actionLoading === doc.id}
+                              className="inline-flex items-center px-3 py-1.5 border border-blue-300 rounded-md text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              ✏️ 编辑
                             </button>
                             <select
                               value={doc.status}

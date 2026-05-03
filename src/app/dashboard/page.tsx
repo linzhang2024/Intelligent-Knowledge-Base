@@ -5,8 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatDate, formatFileSize } from "@/lib/format";
 import LogoutButton from "@/components/ui/LogoutButton";
-import NavTabs from "@/components/ui/NavTabs";
-import ActionButtons from "@/components/ui/ActionButtons";
 
 interface KnowledgeBase {
   id: string;
@@ -116,32 +114,41 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <h1 className="text-lg font-bold text-gray-900">智能知识库</h1>
-            <span className="text-gray-300">|</span>
-            <NavTabs
-              activeTab="chat"
-              tabs={[
-                { key: "chat", label: "知识库问答", href: "/chat", icon: "💬" },
-                { key: "report-sql", label: "报表SQL", href: "/report-sql", icon: "📊" },
-              ]}
-            />
-            <ActionButtons
-              showClear={false}
-              showUpload={true}
-              showDashboard={false}
-              uploadLabel="上传"
-              showLabels={true}
-            />
+      <header className="bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+          <div className="flex items-center space-x-6">
+            <h1 className="text-2xl font-bold text-gray-900">智能知识库</h1>
+            <div className="flex items-center space-x-3">
+              <Link
+                href="/chat"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors duration-200"
+              >
+                <span className="mr-2">💬</span>
+                知识库问答
+              </Link>
+              <Link
+                href="/report-sql"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 transition-colors duration-200"
+              >
+                <span className="mr-2">📊</span>
+                报表SQL
+              </Link>
+              <Link
+                href="/documents/upload"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 transition-colors duration-200"
+              >
+                <span className="mr-2">📄</span>
+                上传文档
+              </Link>
+            </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3">
             <Link
               href="/admin"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 border border-gray-200 rounded-md text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-colors duration-200"
+              className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300 transition-colors duration-200"
             >
               <svg
+                className="mr-2"
                 xmlns="http://www.w3.org/2000/svg"
                 width="16"
                 height="16"

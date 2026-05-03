@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 
-export const DOCUMENT_STATUS = {
+const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
   PUBLISHED: "PUBLISHED",
   ARCHIVED: "ARCHIVED",
 } as const;
 
-export type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
+type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
 
 const VALID_STATUSES = Object.values(DOCUMENT_STATUS);
 
@@ -121,7 +121,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { status, title, content } = body;
+    const { status, title, content, knowledgeBaseId } = body;
 
     const updateData: Record<string, unknown> = {};
 
@@ -141,6 +141,23 @@ export async function PATCH(
 
     if (content !== undefined) {
       updateData.content = content;
+    }
+
+    if (knowledgeBaseId !== undefined) {
+      if (knowledgeBaseId === null || knowledgeBaseId === "") {
+        updateData.knowledgeBaseId = null;
+      } else {
+        const knowledgeBase = await prisma.knowledgeBase.findUnique({
+          where: { id: knowledgeBaseId },
+        });
+        if (!knowledgeBase) {
+          return NextResponse.json(
+            { message: "指定的知识库不存在" },
+            { status: 400 }
+          );
+        }
+        updateData.knowledgeBaseId = knowledgeBaseId;
+      }
     }
 
     if (Object.keys(updateData).length === 0) {

@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { AUTH_COOKIE_NAME } from "@/lib/auth";
 
-export const USER_STATUS = {
+const USER_STATUS = {
   PENDING: "PENDING",
   ACTIVE: "ACTIVE",
   BANNED: "BANNED",
 } as const;
 
-export type UserStatus = typeof USER_STATUS[keyof typeof USER_STATUS];
+type UserStatus = typeof USER_STATUS[keyof typeof USER_STATUS];
 
 export async function POST(request: NextRequest) {
   try {

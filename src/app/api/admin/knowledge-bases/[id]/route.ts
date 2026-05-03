@@ -113,9 +113,13 @@ export async function PATCH(
 
     if (visibility !== undefined) {
       const validVisibilities = ["PRIVATE", "PUBLIC"];
-      if (validVisibilities.includes(visibility)) {
-        updateData.visibility = visibility;
+      if (!validVisibilities.includes(visibility)) {
+        return NextResponse.json(
+          { message: `无效的可见范围值，有效值为: ${validVisibilities.join(", ")}` },
+          { status: 400 }
+        );
       }
+      updateData.visibility = visibility;
     }
 
     if (Object.keys(updateData).length === 0) {

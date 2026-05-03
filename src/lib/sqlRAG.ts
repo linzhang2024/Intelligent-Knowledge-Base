@@ -208,13 +208,17 @@ async function retrieveRelevantTables(
     try {
       searchResults = await semanticSearch(query, {
         knowledgeBaseId,
-        limit: 10,
-        minSimilarity: 0.3,
+        limit: 15,
+        minSimilarity: 0.12,
       });
       console.log(`[SQL RAG] 语义检索完成，找到 ${searchResults.length} 个相关片段`);
     } catch (error) {
       console.warn(`[SQL RAG] 语义检索失败:`, error);
+      searchResults = [];
     }
+  } else {
+    console.log(`[SQL RAG] Embedding 未配置，跳过语义检索`);
+    searchResults = [];
   }
 
   const whereClause = knowledgeBaseId ? { knowledgeBaseId } : {};
@@ -238,19 +242,20 @@ async function retrieveRelevantTables(
   const allRelations: RelationMetadata[] = [];
 
   const mentionedTableNames = extractTableNamesFromQuery(query, searchResults);
+  const mentionedTableNamesArray = Array.from(mentionedTableNames);
 
   for (const dbTable of dbTables) {
-    const isMentioned = mentionedTableNames.some(
+    const isMentioned = mentionedTableNamesArray.some(
       (name) =>
         name.toLowerCase() === dbTable.name.toLowerCase() ||
         (dbTable.tableComment &&
           dbTable.tableComment.toLowerCase().includes(name.toLowerCase()))
     );
 
-    const hasRelevantContent = searchResults.some(
+    const hasRelevantContent = searchResults.length > 0 && searchResults.some(
       (r) =>
-        r.documentTitle.toLowerCase().includes(dbTable.name.toLowerCase()) ||
-        r.content.toLowerCase().includes(dbTable.name.toLowerCase())
+        (r.documentTitle && r.documentTitle.toLowerCase().includes(dbTable.name.toLowerCase())) ||
+        (r.content && r.content.toLowerCase().includes(dbTable.name.toLowerCase()))
     );
 
     if (isMentioned || hasRelevantContent || mentionedTableNames.size === 0) {

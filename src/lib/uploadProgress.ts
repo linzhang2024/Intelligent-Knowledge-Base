@@ -41,28 +41,28 @@ export const PROGRESS_STAGE_CONFIG: Record<UploadProgressStage, {
     defaultMessage: "初始化上传会话..." 
   },
   uploading: { 
-    minProgress: 5, 
+    minProgress: 0, 
     maxProgress: 30, 
-    defaultMessage: "正在上传文件..." 
+    defaultMessage: "文件上传中..." 
   },
   encoding: { 
-    minProgress: 0, 
-    maxProgress: 20, 
+    minProgress: 30, 
+    maxProgress: 50, 
     defaultMessage: "正在识别文件编码并转换为 UTF-8" 
   },
   parsing: { 
-    minProgress: 20, 
-    maxProgress: 50, 
+    minProgress: 50, 
+    maxProgress: 75, 
     defaultMessage: "正在解析文档内容..." 
   },
   chunking: { 
-    minProgress: 40, 
-    maxProgress: 55, 
+    minProgress: 75, 
+    maxProgress: 80, 
     defaultMessage: "正在创建文本切片..." 
   },
   storing: { 
-    minProgress: 50, 
-    maxProgress: 90, 
+    minProgress: 80, 
+    maxProgress: 85, 
     defaultMessage: "正在将片段批量写入数据库..." 
   },
   embedding: { 
@@ -83,7 +83,7 @@ export const PROGRESS_STAGE_CONFIG: Record<UploadProgressStage, {
   success: { 
     minProgress: 100, 
     maxProgress: 100, 
-    defaultMessage: "数据已就绪，上传成功！" 
+    defaultMessage: "入库完成" 
   },
   error: { 
     minProgress: 0, 

@@ -405,14 +405,9 @@ export default function UploadPage() {
               if (progress) {
                 const currentFile = files.find(f => f.id === id);
                 if (currentFile && currentFile.status !== "success" && currentFile.status !== "error") {
-                  let displayProgress = progress.progress;
-                  if (progress.stage === "uploading" || progress.stage === "initializing") {
-                    displayProgress = 30;
-                  }
-                  
                   const updates: Partial<FileUploadItem> = {
                     status: progress.stage,
-                    progress: Math.min(Math.max(displayProgress, 30), 99),
+                    progress: Math.min(Math.max(progress.progress, 0), 100),
                     progressMessage: progress.message,
                     hasProgressError: false,
                   };
@@ -513,7 +508,7 @@ export default function UploadPage() {
           `[普通上传] 文件较小 (${formatFileSize(file.size)})，使用普通上传`
         );
 
-        updateFile(id, { status: "uploading", progress: 10 });
+        updateFile(id, { status: "uploading", progress: 0 });
 
         const formData = new FormData();
         formData.append("title", file.name.replace(/\.[^/.]+$/, ""));
@@ -527,8 +522,8 @@ export default function UploadPage() {
           (resolve, reject) => {
             xhr.upload.addEventListener("progress", (event) => {
               if (event.lengthComputable) {
-                const uploadPercent = (event.loaded / event.total) * 60;
-                updateFile(id, { progress: 10 + uploadPercent });
+                const uploadPercent = (event.loaded / event.total) * 30;
+                updateFile(id, { progress: uploadPercent });
               }
             });
 
@@ -568,11 +563,11 @@ export default function UploadPage() {
           }
         );
 
-        updateFile(id, { status: "parsing", progress: 70 });
+        updateFile(id, { status: "encoding", progress: 30, progressMessage: "正在识别文件编码并转换为 UTF-8" });
 
         const { data } = await uploadPromise;
 
-        updateFile(id, { status: "chunking", progress: 90 });
+        updateFile(id, { status: "parsing", progress: 50, progressMessage: "正在解析文档内容..." });
 
         const isParseError =
           data.warningType &&

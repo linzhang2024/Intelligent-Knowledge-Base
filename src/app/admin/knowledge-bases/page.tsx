@@ -38,6 +38,11 @@ interface CreateModalState {
   isOpen: boolean;
 }
 
+interface EditModalState {
+  isOpen: boolean;
+  knowledgeBase: KnowledgeBase | null;
+}
+
 export default function KnowledgeBasesPage() {
   const router = useRouter();
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -64,6 +69,16 @@ export default function KnowledgeBasesPage() {
     description: "",
   });
   const [createLoading, setCreateLoading] = useState(false);
+  const [editModal, setEditModal] = useState<EditModalState>({
+    isOpen: false,
+    knowledgeBase: null,
+  });
+  const [editForm, setEditForm] = useState({
+    name: "",
+    description: "",
+    visibility: "PRIVATE",
+  });
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchKnowledgeBases = useCallback(async (page: number, searchQuery: string) => {
     setLoading(true);
@@ -186,6 +201,72 @@ export default function KnowledgeBasesPage() {
 
   const handleCreateModalClose = () => {
     setCreateModal({ isOpen: false });
+  };
+
+  const handleEditClick = (kb: KnowledgeBase) => {
+    setEditForm({
+      name: kb.name,
+      description: kb.description || "",
+      visibility: (kb as any).visibility || "PRIVATE",
+    });
+    setEditModal({
+      isOpen: true,
+      knowledgeBase: kb,
+    });
+  };
+
+  const handleEditModalClose = () => {
+    setEditModal({
+      isOpen: false,
+      knowledgeBase: null,
+    });
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!editForm.name.trim()) {
+      alert("知识库名称不能为空");
+      return;
+    }
+
+    if (!editModal.knowledgeBase) return;
+
+    const kbId = editModal.knowledgeBase.id;
+    setEditLoading(true);
+
+    try {
+      const response = await fetch(`/api/admin/knowledge-bases/${kbId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          description: editForm.description.trim() || null,
+          visibility: editForm.visibility,
+        }),
+      });
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "更新失败");
+      }
+
+      handleEditModalClose();
+      fetchKnowledgeBases(pagination.page, search);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "更新失败");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleVisitClick = (kb: KnowledgeBase) => {
+    router.push(`/admin/knowledge-bases/${kb.id}`);
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -320,6 +401,81 @@ export default function KnowledgeBasesPage() {
         </div>
       )}
 
+      {editModal.isOpen && editModal.knowledgeBase && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4 text-center">
+            <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={handleEditModalClose}></div>
+            <div className="relative w-full max-w-lg transform overflow-hidden rounded-lg bg-white p-6 text-left shadow-xl transition-all">
+              <div className="mb-4">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  编辑知识库
+                </h3>
+                <form onSubmit={handleEditSubmit}>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      知识库名称 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      placeholder="请输入知识库名称"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      描述
+                    </label>
+                    <textarea
+                      value={editForm.description}
+                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                      placeholder="请输入知识库描述（可选）"
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      可见范围
+                    </label>
+                    <select
+                      value={editForm.visibility}
+                      onChange={(e) => setEditForm({ ...editForm, visibility: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="PRIVATE">私有</option>
+                      <option value="PUBLIC">公开</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      私有：仅所有者可见；公开：所有用户可见
+                    </p>
+                  </div>
+                  <div className="mt-6 flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={handleEditModalClose}
+                      disabled={editLoading}
+                      className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={editLoading || !editForm.name.trim()}
+                      className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {editLoading ? "保存中..." : "保存"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AdminHeader title="知识库管理" showBackButton={false} showNavMenu={true} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -419,20 +575,28 @@ export default function KnowledgeBasesPage() {
                     <p className="text-xs text-gray-400 mb-4">
                       创建于 {new Date(kb.createdAt).toLocaleDateString("zh-CN")}
                     </p>
-                    <div className="mt-auto flex space-x-2">
+                    <div className="mt-auto flex flex-col gap-2">
                       <button
-                        onClick={() => {}}
-                        className="flex-1 text-sm text-indigo-600 hover:text-indigo-900 py-2 border border-indigo-600 rounded transition-colors"
+                        onClick={() => handleVisitClick(kb)}
+                        className="w-full text-sm text-white bg-indigo-600 hover:bg-indigo-700 py-2 rounded transition-colors font-medium"
                       >
-                        编辑
+                        访问
                       </button>
-                      <button
-                        onClick={() => handleDeleteClick(kb)}
-                        disabled={actionLoading === kb.id || kb.documentCount > 0}
-                        className="flex-1 text-sm text-red-600 hover:text-red-900 py-2 border border-red-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        删除
-                      </button>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleEditClick(kb)}
+                          className="flex-1 text-sm text-indigo-600 hover:text-indigo-900 py-2 border border-indigo-600 rounded transition-colors"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(kb)}
+                          disabled={actionLoading === kb.id || kb.documentCount > 0}
+                          className="flex-1 text-sm text-red-600 hover:text-red-900 py-2 border border-red-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

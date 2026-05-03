@@ -95,7 +95,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { name, description, ownerId } = body;
+    const { name, description, ownerId, visibility } = body;
 
     const updateData: Record<string, unknown> = {};
 
@@ -109,6 +109,13 @@ export async function PATCH(
 
     if (ownerId !== undefined && ownerId !== "") {
       updateData.ownerId = ownerId;
+    }
+
+    if (visibility !== undefined) {
+      const validVisibilities = ["PRIVATE", "PUBLIC"];
+      if (validVisibilities.includes(visibility)) {
+        updateData.visibility = visibility;
+      }
     }
 
     if (Object.keys(updateData).length === 0) {

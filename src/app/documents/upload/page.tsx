@@ -76,6 +76,9 @@ interface FileUploadItem {
   totalChunks?: number;
   uploadedChunks?: number;
   progressMessage?: string;
+  totalItems?: number;
+  processedItems?: number;
+  hasProgressError?: boolean;
 }
 
 const STAGE_LABELS: Record<UploadStage, string> = {
@@ -407,11 +410,21 @@ export default function UploadPage() {
                     displayProgress = 30;
                   }
                   
-                  updateFile(id, {
+                  const updates: Partial<FileUploadItem> = {
                     status: progress.stage,
                     progress: Math.min(Math.max(displayProgress, 30), 99),
                     progressMessage: progress.message,
-                  });
+                    hasProgressError: false,
+                  };
+                  
+                  if (progress.totalItems !== undefined) {
+                    updates.totalItems = progress.totalItems;
+                  }
+                  if (progress.processedItems !== undefined) {
+                    updates.processedItems = progress.processedItems;
+                  }
+                  
+                  updateFile(id, updates);
                 }
 
                 if (progress.stage === "success" || progress.stage === "error") {
@@ -421,6 +434,13 @@ export default function UploadPage() {
               }
             } catch (e) {
               console.warn("进度轮询失败:", e);
+              const currentFile = files.find(f => f.id === id);
+              if (currentFile && !currentFile.hasProgressError) {
+                updateFile(id, {
+                  hasProgressError: true,
+                  progressMessage: "遇到错误，正在处理中，请稍候...",
+                });
+              }
             }
 
             setTimeout(poll, 800);
@@ -634,6 +654,10 @@ export default function UploadPage() {
       uploadId: undefined,
       totalChunks: undefined,
       uploadedChunks: undefined,
+      progressMessage: undefined,
+      totalItems: undefined,
+      processedItems: undefined,
+      hasProgressError: undefined,
     });
   };
 
@@ -677,6 +701,21 @@ export default function UploadPage() {
   const allDone = files.length > 0 && successCount + errorCount === files.length;
 
   const getProgressLabel = (fileItem: FileUploadItem): string => {
+    if (fileItem.hasProgressError && fileItem.progressMessage) {
+      return fileItem.progressMessage;
+    }
+
+    if (fileItem.status === "storing") {
+      if (fileItem.processedItems !== undefined && fileItem.totalItems !== undefined && fileItem.totalItems > 0) {
+        const percentage = Math.round((fileItem.processedItems / fileItem.totalItems) * 100);
+        return `正在存入知识库: ${fileItem.processedItems}/${fileItem.totalItems} 片段 (${percentage}%)`;
+      }
+      if (fileItem.progressMessage) {
+        return fileItem.progressMessage;
+      }
+      return STAGE_LABELS[fileItem.status];
+    }
+
     if (fileItem.progressMessage && fileItem.status !== "idle" && fileItem.status !== "success" && fileItem.status !== "error") {
       return fileItem.progressMessage;
     }

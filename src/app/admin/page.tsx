@@ -238,9 +238,9 @@ export default function AdminOverviewPage() {
                   <Link
                     key={item.id}
                     href={item.href}
-                    className="group"
+                    className="group h-full"
                   >
-                    <div className={`rounded-lg border ${item.color} p-6 hover:shadow-md transition-all duration-200 cursor-pointer`}>
+                    <div className={`rounded-lg border ${item.color} p-6 hover:shadow-md transition-all duration-200 cursor-pointer h-full flex flex-col`}>
                       <div className="flex items-start justify-between">
                         <div className="text-3xl">{item.icon}</div>
                         <svg
@@ -260,7 +260,7 @@ export default function AdminOverviewPage() {
                       <h3 className="mt-4 text-lg font-medium text-gray-900 group-hover:text-indigo-600 transition-colors">
                         {item.title}
                       </h3>
-                      <p className="mt-1 text-sm text-gray-500 line-clamp-2">
+                      <p className="mt-1 text-sm text-gray-500 line-clamp-2 flex-1">
                         {item.description}
                       </p>
                     </div>

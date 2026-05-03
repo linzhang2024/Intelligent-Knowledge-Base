@@ -4,6 +4,13 @@ import prisma from "@/lib/prisma";
 import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import crypto from "crypto";
+import { 
+  initUploadProgress, 
+  getUploadProgress, 
+  updateUploadProgress, 
+  deleteUploadProgress,
+  setUploadProgressStage 
+} from "@/lib/uploadProgress";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const CHUNK_SIZE = 5 * 1024 * 1024;
@@ -39,6 +46,7 @@ export function updateUploadSession(
 
 export function deleteUploadSession(uploadId: string) {
   uploadSessions.delete(uploadId);
+  deleteUploadProgress(uploadId);
 }
 
 export async function POST(request: NextRequest) {
@@ -103,9 +111,12 @@ export async function POST(request: NextRequest) {
     };
 
     uploadSessions.set(uploadId, session);
+    initUploadProgress(uploadId);
+    setUploadProgressStage(uploadId, "initializing");
 
     setTimeout(() => {
       uploadSessions.delete(uploadId);
+      deleteUploadProgress(uploadId);
     }, 24 * 60 * 60 * 1000);
 
     return NextResponse.json(

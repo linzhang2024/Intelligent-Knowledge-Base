@@ -21,8 +21,12 @@ type UploadStage =
   | "idle"
   | "initializing"
   | "uploading"
+  | "encoding"
   | "parsing"
   | "chunking"
+  | "storing"
+  | "embedding"
+  | "sqlImporting"
   | "finalizing"
   | "success"
   | "error";
@@ -48,6 +52,17 @@ interface UploadResult {
   error?: string;
 }
 
+interface ProgressResponse {
+  uploadId: string;
+  stage: UploadStage;
+  progress: number;
+  message: string;
+  totalItems?: number;
+  processedItems?: number;
+  error?: string;
+  updatedAt: number;
+}
+
 interface FileUploadItem {
   id: string;
   file: File;
@@ -60,14 +75,19 @@ interface FileUploadItem {
   uploadId?: string;
   totalChunks?: number;
   uploadedChunks?: number;
+  progressMessage?: string;
 }
 
 const STAGE_LABELS: Record<UploadStage, string> = {
   idle: "等待上传",
   initializing: "初始化...",
   uploading: "正在上传...",
-  parsing: "正在解析...",
-  chunking: "正在创建切片...",
+  encoding: "正在识别文件编码并转换为 UTF-8",
+  parsing: "正在解析文档内容...",
+  chunking: "正在创建文本切片...",
+  storing: "正在将片段批量写入数据库...",
+  embedding: "正在向量化文本片段...",
+  sqlImporting: "正在导入SQL表结构...",
   finalizing: "正在处理...",
   success: "上传成功",
   error: "上传失败",
@@ -160,6 +180,59 @@ async function completeChunkUpload(
   }
 
   return response.json();
+}
+
+async function getUploadProgress(uploadId: string): Promise<ProgressResponse | null> {
+  try {
+    const response = await fetch(`/api/documents/chunk/progress?uploadId=${encodeURIComponent(uploadId)}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+    return null;
+  } catch (error) {
+    console.warn("获取进度失败:", error);
+    return null;
+  }
+}
+
+function startProgressPolling(
+  uploadId: string,
+  onProgress: (progress: ProgressResponse) => void,
+  onComplete: () => void,
+  interval: number = 1000
+): () => void {
+  let isStopped = false;
+  
+  const poll = async () => {
+    if (isStopped) return;
+    
+    const progress = await getUploadProgress(uploadId);
+    
+    if (progress) {
+      onProgress(progress);
+      
+      if (progress.stage === "success" || progress.stage === "error") {
+        onComplete();
+        return;
+      }
+    }
+    
+    if (!isStopped) {
+      setTimeout(poll, interval);
+    }
+  };
+  
+  poll();
+  
+  return () => {
+    isStopped = true;
+  };
 }
 
 export default function UploadPage() {
@@ -300,7 +373,7 @@ export default function UploadPage() {
           await uploadChunk(uploadId, chunkIndex, chunk);
 
           const uploadedChunks = chunkIndex + 1;
-          const uploadProgress = 5 + (uploadedChunks / totalChunks) * 70;
+          const uploadProgress = 5 + (uploadedChunks / totalChunks) * 25;
 
           updateFile(id, {
             uploadedChunks,
@@ -308,36 +381,94 @@ export default function UploadPage() {
           });
         }
 
-        updateFile(id, { status: "finalizing", progress: 75 });
+        let completeResult: any = null;
+        let pollError: Error | null = null;
 
-        const completeResult = await completeChunkUpload(
-          uploadId,
-          file.name.replace(/\.[^/.]+$/, ""),
-          knowledgeBaseId
-        );
+        const progressPolling = new Promise<void>((resolve) => {
+          let pollCount = 0;
+          const maxPolls = 600;
+          
+          const poll = async () => {
+            pollCount++;
+            
+            if (pollCount > maxPolls || completeResult !== null) {
+              resolve();
+              return;
+            }
 
-        updateFile(id, { status: "chunking", progress: 90 });
+            try {
+              const progress = await getUploadProgress(uploadId);
+              
+              if (progress) {
+                const currentFile = files.find(f => f.id === id);
+                if (currentFile && currentFile.status !== "success" && currentFile.status !== "error") {
+                  let displayProgress = progress.progress;
+                  if (progress.stage === "uploading" || progress.stage === "initializing") {
+                    displayProgress = 30;
+                  }
+                  
+                  updateFile(id, {
+                    status: progress.stage,
+                    progress: Math.min(Math.max(displayProgress, 30), 99),
+                    progressMessage: progress.message,
+                  });
+                }
+
+                if (progress.stage === "success" || progress.stage === "error") {
+                  resolve();
+                  return;
+                }
+              }
+            } catch (e) {
+              console.warn("进度轮询失败:", e);
+            }
+
+            setTimeout(poll, 800);
+          };
+
+          setTimeout(poll, 500);
+        });
+
+        updateFile(id, { status: "encoding", progress: 30, progressMessage: "正在识别文件编码并转换为 UTF-8" });
+
+        try {
+          completeResult = await completeChunkUpload(
+            uploadId,
+            file.name.replace(/\.[^/.]+$/, ""),
+            knowledgeBaseId
+          );
+        } catch (err) {
+          pollError = err instanceof Error ? err : new Error("上传处理失败");
+        }
+
+        await progressPolling;
+
+        if (pollError) {
+          throw pollError;
+        }
 
         const isParseError =
+          completeResult &&
           completeResult.warningType &&
           (completeResult.warningType === "EmptyContentError" ||
             completeResult.warningType === "ScannedPDFError" ||
             completeResult.warningType === "EncryptedPDFError" ||
             completeResult.warningType === "CorruptedFileError");
 
-        if (isParseError) {
+        if (isParseError && completeResult) {
           const errorMessage =
             completeResult.parseWarning || "文档解析失败";
           updateFile(id, {
             status: "error",
             progress: 100,
             error: errorMessage,
+            progressMessage: errorMessage,
             result: {
               success: false,
               error: errorMessage,
             },
           });
-        } else {
+        } else if (completeResult) {
           const result: UploadResult = {
             success: true,
             documentId: completeResult.document?.id,
@@ -350,7 +481,12 @@ export default function UploadPage() {
             warningType: completeResult.warningType,
           };
 
-          updateFile(id, { status: "success", progress: 100, result });
+          updateFile(id, { 
+            status: "success", 
+            progress: 100, 
+            progressMessage: "数据已就绪，上传成功！",
+            result 
+          });
         }
       } else {
         console.log(
@@ -541,6 +677,10 @@ export default function UploadPage() {
   const allDone = files.length > 0 && successCount + errorCount === files.length;
 
   const getProgressLabel = (fileItem: FileUploadItem): string => {
+    if (fileItem.progressMessage && fileItem.status !== "idle" && fileItem.status !== "success" && fileItem.status !== "error") {
+      return fileItem.progressMessage;
+    }
+    
     if (
       fileItem.status === "uploading" &&
       fileItem.totalChunks !== undefined &&

@@ -19,7 +19,17 @@ import {
 } from "@/lib/documentParser";
 import { importSQLFile, SQLImportResult } from "@/lib/sqlParser";
 import { parseSQLStream, StreamParseProgress } from "@/lib/streaming/sqlStreamParser";
-import { sanitizeAndSplitChunks } from "@/lib/textSanitizer";
+import {
+  processChunksWithErrorHandling,
+  splitTextIntoChunks,
+  ChunkProgressCallback,
+  ChunkProcessingResult,
+} from "@/lib/documentChunkProcessor";
+import {
+  setUploadProgressStage,
+  updateUploadProgress,
+  UploadProgressStage,
+} from "@/lib/uploadProgress";
 import {
   createReadStream,
   createWriteStream,
@@ -32,69 +42,6 @@ import {
 import path from "path";
 import { getUploadSession, deleteUploadSession } from "../init/route";
 
-const CHUNK_SIZE = 500;
-const CHUNK_OVERLAP = 50;
-const MAX_SINGLE_CHUNK_SIZE = 2000;
-
-async function processChunksWithErrorHandling(
-  chunks: string[],
-  documentId: string
-): Promise<{
-  storedCount: number;
-  skippedCount: number;
-  sanitizationErrors: number;
-}> {
-  const sanitizeResult = sanitizeAndSplitChunks(
-    chunks,
-    CHUNK_SIZE,
-    MAX_SINGLE_CHUNK_SIZE
-  );
-
-  const processedChunks = sanitizeResult.chunks;
-  let storedCount = 0;
-  const skippedIndices: number[] = [];
-
-  for (let i = 0; i < processedChunks.length; i++) {
-    const chunk = processedChunks[i];
-    const chunkData = {
-      documentId,
-      index: i,
-      content: chunk,
-    };
-
-    try {
-      await prisma.documentChunk.create({
-        data: chunkData,
-      });
-      storedCount++;
-    } catch (error) {
-      console.error(
-        `[RAG 存储] 片段 ${i} 存储失败，跳过:`,
-        error instanceof Error ? error.message : "未知错误"
-      );
-      skippedIndices.push(i);
-    }
-  }
-
-  if (sanitizeResult.skippedChunks.length > 0) {
-    console.warn(
-      `[RAG 存储] 原始 ${sanitizeResult.skippedChunks.length} 个片段因清洗失败被跳过`
-    );
-  }
-
-  if (skippedIndices.length > 0) {
-    console.warn(
-      `[RAG 存储] ${skippedIndices.length} 个片段因数据库写入失败被跳过`
-    );
-  }
-
-  return {
-    storedCount,
-    skippedCount: sanitizeResult.skippedChunks.length + skippedIndices.length,
-    sanitizationErrors: sanitizeResult.sanitizationErrors,
-  };
-}
-
 const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
   PUBLISHED: "PUBLISHED",
@@ -104,48 +51,42 @@ const DOCUMENT_STATUS = {
 
 type DocumentStatus = typeof DOCUMENT_STATUS[keyof typeof DOCUMENT_STATUS];
 
-function splitTextIntoChunks(
-  text: string,
-  chunkSize: number = CHUNK_SIZE,
-  overlap: number = CHUNK_OVERLAP
-): string[] {
-  if (!text || text.length === 0) {
-    return [];
-  }
+function createChunkProgressCallback(uploadId: string): ChunkProgressCallback {
+  return (progress) => {
+    const baseProgress = 50;
+    const progressRange = 40;
+    
+    const calculatedProgress = baseProgress + (progress.progress * progressRange / 100);
+    
+    updateUploadProgress(uploadId, {
+      stage: "storing",
+      progress: calculatedProgress,
+      message: progress.message,
+      processedItems: progress.processedItems,
+      totalItems: progress.totalItems,
+    });
+    
+    console.log(`[进度更新] ${progress.message} (${Math.round(calculatedProgress)}%)`);
+  };
+}
 
-  const chunks: string[] = [];
-  const sentences = text.split(/([。！？.!?\n])/).filter((s) => s.trim());
-
-  let currentChunk = "";
-
-  for (let i = 0; i < sentences.length; i += 2) {
-    const sentence = sentences[i] + (sentences[i + 1] || "");
-
-    if (
-      currentChunk.length + sentence.length > chunkSize &&
-      currentChunk.length > 0
-    ) {
-      chunks.push(currentChunk.trim());
-
-      if (overlap > 0 && currentChunk.length > overlap) {
-        const lastPart = currentChunk.slice(-overlap);
-        const lastSentenceMatch = lastPart.match(
-          /[^。！？.!?\n]*[。！？.!?\n]?$/
-        );
-        currentChunk = lastSentenceMatch ? lastSentenceMatch[0] : lastPart;
-      } else {
-        currentChunk = "";
-      }
-    }
-
-    currentChunk += sentence;
-  }
-
-  if (currentChunk.trim().length > 0) {
-    chunks.push(currentChunk.trim());
-  }
-
-  return chunks;
+function updateEmbeddingProgress(
+  uploadId: string,
+  current: number,
+  total: number,
+  message: string
+) {
+  const baseProgress = 85;
+  const progressRange = 10;
+  const progress = baseProgress + (current / total) * progressRange;
+  
+  updateUploadProgress(uploadId, {
+    stage: "embedding",
+    progress,
+    message,
+    processedItems: current,
+    totalItems: total,
+  });
 }
 
 async function mergeChunks(
@@ -272,6 +213,8 @@ export async function POST(request: NextRequest) {
 
     await mergeChunks(uploadId, session.totalChunks, filePath);
 
+    setUploadProgressStage(uploadId, "encoding", "正在识别文件编码并转换为 UTF-8");
+
     if (knowledgeBaseId && knowledgeBaseId.trim()) {
       const kb = await prisma.knowledgeBase.findUnique({
         where: { id: knowledgeBaseId },
@@ -307,11 +250,30 @@ export async function POST(request: NextRequest) {
         `开始解析文档: ${session.fileName}, 类型: ${docType}, 大小: ${formatFileSize(session.fileSize)}`
       );
 
+      setUploadProgressStage(uploadId, "parsing", "正在解析文档内容...");
+
       if (docType === "sql" && session.fileSize > 10 * 1024 * 1024) {
         console.log(`[流式解析] 大SQL文件，使用流式解析: ${session.fileName}`);
         
+        updateUploadProgress(uploadId, {
+          stage: "parsing",
+          progress: 25,
+          message: "正在将 SQL 拆分为 DDL 逻辑块...",
+        });
+        
         const streamResult = await parseSQLStream(filePath, "mysql", (progress) => {
           sqlParseProgress = { ...progress };
+          
+          const linesProgress = Math.min(progress.linesProcessed / 1000, 1);
+          const parsingProgress = 20 + linesProgress * 30;
+          
+          updateUploadProgress(uploadId, {
+            stage: "parsing",
+            progress: parsingProgress,
+            message: `正在解析SQL: 行=${progress.linesProcessed}, 表=${progress.tablesFound}`,
+            processedItems: progress.linesProcessed,
+          });
+          
           console.log(
             `[流式解析] 进度: 行=${progress.linesProcessed}, 语句=${progress.statementsFound}, 表=${progress.tablesFound}`
           );
@@ -328,6 +290,12 @@ export async function POST(request: NextRequest) {
           session.fileExtension
         );
       }
+
+      updateUploadProgress(uploadId, {
+        stage: "parsing",
+        progress: 45,
+        message: "文档解析完成",
+      });
 
       console.log(
         `文档解析成功，文本长度: ${extractedContent.length} 字符`
@@ -348,7 +316,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (!parseError) {
+      setUploadProgressStage(uploadId, "chunking", "正在创建文本切片...");
+      
       textChunks = splitTextIntoChunks(extractedContent);
+      
+      updateUploadProgress(uploadId, {
+        stage: "chunking",
+        progress: 48,
+        message: `已创建 ${textChunks.length} 个文本片段，准备写入数据库...`,
+        totalItems: textChunks.length,
+      });
+      
       console.log(
         `[RAG 预处理] 文档 "${title || session.fileName}" 文本长度: ${extractedContent.length} 字符`
       );
@@ -429,9 +407,12 @@ export async function POST(request: NextRequest) {
       return newDocument;
     });
 
+    const chunkProgressCallback = createChunkProgressCallback(uploadId);
+    
     chunkProcessingResult = await processChunksWithErrorHandling(
       textChunks,
-      document.id
+      document.id,
+      chunkProgressCallback
     );
 
     console.log(
@@ -451,6 +432,8 @@ export async function POST(request: NextRequest) {
           `[SQL导入] 检测到SQL文件，开始解析表结构: "${title || session.fileName}"`
         );
 
+        setUploadProgressStage(uploadId, "sqlImporting", "正在导入SQL表结构...");
+
         const dialect = detectSQLDialect(extractedContent);
         console.log(`[SQL导入] 检测到的SQL方言: ${dialect}`);
 
@@ -461,6 +444,12 @@ export async function POST(request: NextRequest) {
           overwriteExisting: false,
           inferRelations: true,
           dialect: dialect,
+        });
+
+        updateUploadProgress(uploadId, {
+          stage: "sqlImporting",
+          progress: 90,
+          message: `SQL导入完成: 表=${sqlImportResult.tablesImported}, 字段=${sqlImportResult.columnsImported}`,
         });
 
         console.log(
@@ -497,6 +486,8 @@ export async function POST(request: NextRequest) {
           `[RAG Embedding] 开始向量化文档 "${title || session.fileName}" 的 ${chunkProcessingResult.storedCount} 个片段`
         );
 
+        setUploadProgressStage(uploadId, "embedding", "正在向量化文本片段...");
+
         const chunks = await prisma.documentChunk.findMany({
           where: { documentId: document.id },
           orderBy: { index: "asc" },
@@ -505,17 +496,26 @@ export async function POST(request: NextRequest) {
 
         const validChunks = chunks.filter(c => c.content && c.content.trim().length > 0);
         const contents = validChunks.map(c => c.content || "");
+        const totalBatches = Math.ceil(contents.length / 10);
 
         if (contents.length > 0) {
           const batchSize = 10;
           for (let batch = 0; batch < contents.length; batch += batchSize) {
             const batchContents = contents.slice(batch, batch + batchSize);
             const batchChunks = validChunks.slice(batch, batch + batchSize);
+            const currentBatchNum = Math.floor(batch / batchSize) + 1;
 
             try {
               const embeddingResult = await embedDocuments(batchContents);
               console.log(
-                `[RAG Embedding] 批次 ${Math.floor(batch / batchSize) + 1}/${Math.ceil(contents.length / batchSize)} 向量化完成，模型: ${embeddingResult.model}`
+                `[RAG Embedding] 批次 ${currentBatchNum}/${totalBatches} 向量化完成，模型: ${embeddingResult.model}`
+              );
+
+              updateEmbeddingProgress(
+                uploadId,
+                currentBatchNum,
+                totalBatches,
+                `向量化进度: ${currentBatchNum}/${totalBatches} 批次`
               );
 
               for (let i = 0; i < batchChunks.length && i < embeddingResult.vectors.length; i++) {
@@ -537,7 +537,7 @@ export async function POST(request: NextRequest) {
               }
             } catch (batchError) {
               console.error(
-                `[RAG Embedding] 批次 ${Math.floor(batch / batchSize) + 1} 向量化失败，跳过该批次:`,
+                `[RAG Embedding] 批次 ${currentBatchNum} 向量化失败，跳过该批次:`,
                 batchError instanceof Error ? batchError.message : "未知错误"
               );
             }
@@ -600,11 +600,22 @@ export async function POST(request: NextRequest) {
       };
     }
 
+    setUploadProgressStage(uploadId, "success", "数据已就绪，上传成功！");
+
     cleanupTempFiles(uploadId);
     deleteUploadSession(uploadId);
 
     return NextResponse.json(responseData, { status: 201 });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "未知错误";
+    
+    updateUploadProgress(uploadId, {
+      stage: "error",
+      progress: 0,
+      message: `上传失败: ${errorMessage}`,
+      error: errorMessage,
+    });
+
     if (error instanceof DocumentParseError) {
       return NextResponse.json(
         { message: error.message, errorType: error.name },
@@ -631,8 +642,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.error("分块上传完成失败:", error);
-
-    const errorMessage = error instanceof Error ? error.message : "未知错误";
 
     return NextResponse.json(
       {

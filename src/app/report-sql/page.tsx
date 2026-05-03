@@ -506,7 +506,7 @@ export default function ReportSQLPage() {
         activePage="report-sql"
         showTabs={true}
         showDashboardLink={true}
-        reportSqlPageActions={{
+        pageActions={{
           onClear: clearAll,
           isLoading: isLoading,
         }}

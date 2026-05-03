@@ -266,8 +266,8 @@ export default function ChatPage() {
         activePage="chat"
         showTabs={true}
         showDashboardLink={true}
-        chatPageActions={{
-          onClearChat: clearChat,
+        pageActions={{
+          onClear: clearChat,
           isLoading: isLoading,
         }}
       />

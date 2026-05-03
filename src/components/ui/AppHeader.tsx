@@ -4,12 +4,7 @@ import Link from "next/link";
 
 export type ActivePage = "chat" | "report-sql";
 
-interface ChatPageActions {
-  onClearChat?: () => void;
-  isLoading?: boolean;
-}
-
-interface ReportSqlPageActions {
+interface PageActions {
   onClear?: () => void;
   isLoading?: boolean;
 }
@@ -20,8 +15,7 @@ interface AppHeaderProps {
   titleHref?: string;
   showTabs?: boolean;
   showDashboardLink?: boolean;
-  chatPageActions?: ChatPageActions;
-  reportSqlPageActions?: ReportSqlPageActions;
+  pageActions?: PageActions;
 }
 
 function HomeIcon({ className }: { className?: string }) {
@@ -134,8 +128,7 @@ export default function AppHeader({
   titleHref = "/dashboard",
   showTabs = true,
   showDashboardLink = true,
-  chatPageActions,
-  reportSqlPageActions,
+  pageActions,
 }: AppHeaderProps) {
   const tabs = navTabs[activePage];
 
@@ -146,52 +139,26 @@ export default function AppHeader({
     return `text-sm text-gray-500 hover:text-orange-600 px-2 py-1 hover:bg-orange-50 rounded transition-colors`;
   };
 
-  const renderLeftActions = () => {
-    if (activePage === "chat") {
-      return (
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={chatPageActions?.onClearChat}
-            disabled={chatPageActions?.isLoading}
-            className={`${buttonBaseClass} ${secondaryButtonClass} ${chatPageActions?.isLoading ? disabledButtonClass : ""}`}
-          >
-            <TrashIcon className="mr-2" />
-            清空对话
-          </button>
-          <Link
-            href="/documents/upload"
-            className={`${buttonBaseClass} ${primaryButtonClass}`}
-          >
-            <UploadIcon className="mr-2" />
-            上传文档
-          </Link>
-        </div>
-      );
-    }
-
-    if (activePage === "report-sql") {
-      return (
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={reportSqlPageActions?.onClear}
-            disabled={reportSqlPageActions?.isLoading}
-            className={`${buttonBaseClass} ${secondaryButtonClass} ${reportSqlPageActions?.isLoading ? disabledButtonClass : ""}`}
-          >
-            <TrashIcon className="mr-2" />
-            清空
-          </button>
-          <Link
-            href="/documents/upload"
-            className={`${buttonBaseClass} ${primaryButtonClass}`}
-          >
-            <UploadIcon className="mr-2" />
-            上传文档
-          </Link>
-        </div>
-      );
-    }
-
-    return null;
+  const renderActionButtons = () => {
+    return (
+      <div className="flex items-center space-x-3">
+        <button
+          onClick={pageActions?.onClear}
+          disabled={pageActions?.isLoading}
+          className={`${buttonBaseClass} ${secondaryButtonClass} ${pageActions?.isLoading ? disabledButtonClass : ""}`}
+        >
+          <TrashIcon className="mr-2" />
+          清空对话
+        </button>
+        <Link
+          href="/documents/upload"
+          className={`${buttonBaseClass} ${primaryButtonClass}`}
+        >
+          <UploadIcon className="mr-2" />
+          上传文档
+        </Link>
+      </div>
+    );
   };
 
   return (
@@ -235,7 +202,7 @@ export default function AppHeader({
             </div>
 
             <div className="flex items-center space-x-3">
-              {renderLeftActions()}
+              {renderActionButtons()}
             </div>
           </div>
 

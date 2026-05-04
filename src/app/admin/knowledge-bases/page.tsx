@@ -123,7 +123,18 @@ export default function KnowledgeBasesPage() {
 
   useEffect(() => {
     fetchKnowledgeBases(1, "");
-  }, [fetchKnowledgeBases]);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchKnowledgeBases(pagination.page, search);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchKnowledgeBases, pagination.page, search]);
 
   const handleSearch = () => {
     setSearch(searchInput);

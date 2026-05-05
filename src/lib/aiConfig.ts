@@ -12,8 +12,23 @@ export type AIProvider = typeof AI_PROVIDERS[keyof typeof AI_PROVIDERS];
 export const EMBEDDING_MODELS: Record<AIProvider, string[]> = {
   [AI_PROVIDERS.OPENAI]: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
   [AI_PROVIDERS.DEEPSEEK]: ["deepseek-embedding"],
-  [AI_PROVIDERS.DASHSCOPE]: ["text-embedding-v1", "text-embedding-v2", "text-embedding-v3"],
+  [AI_PROVIDERS.DASHSCOPE]: ["text-embedding-v4", "text-embedding-v3", "text-embedding-v2", "text-embedding-v1"],
 };
+
+export const EMBEDDING_MODEL_DIMENSIONS: Record<string, number> = {
+  "text-embedding-v1": 1024,
+  "text-embedding-v2": 1536,
+  "text-embedding-v3": 1024,
+  "text-embedding-v4": 1024,
+  "text-embedding-3-small": 1536,
+  "text-embedding-3-large": 3072,
+  "text-embedding-ada-002": 1536,
+  "deepseek-embedding": 1024,
+};
+
+export function getEmbeddingModelDimensions(model: string): number {
+  return EMBEDDING_MODEL_DIMENSIONS[model] || 1024;
+}
 
 export const LLM_MODELS: Record<AIProvider, string[]> = {
   [AI_PROVIDERS.OPENAI]: ["gpt-3.5-turbo", "gpt-4", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],

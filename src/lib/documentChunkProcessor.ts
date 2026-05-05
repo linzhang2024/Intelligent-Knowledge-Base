@@ -1,10 +1,35 @@
 import prisma from "@/lib/prisma";
 import { sanitizeAndSplitChunks } from "@/lib/textSanitizer";
+import { getRAGConfig, DEFAULT_RAG_CONFIG, DEFAULT_SQL_RAG_CONFIG, RAGConfig } from "@/lib/ragConfig";
 
-const CHUNK_SIZE = 500;
-const CHUNK_OVERLAP = 50;
-const MAX_SINGLE_CHUNK_SIZE = 2000;
 const BATCH_SIZE = 200;
+
+let cachedRAGConfig: RAGConfig | null = null;
+let cachedConfigTime = 0;
+const CACHE_TTL = 60000;
+
+async function getCachedRAGConfig(): Promise<RAGConfig> {
+  const now = Date.now();
+  if (cachedRAGConfig && now - cachedConfigTime < CACHE_TTL) {
+    return cachedRAGConfig;
+  }
+  
+  try {
+    cachedRAGConfig = await getRAGConfig();
+    cachedConfigTime = now;
+    return cachedRAGConfig;
+  } catch (error) {
+    console.warn("[RAG Config] 读取配置失败，使用默认值:", error);
+    return {
+      chunkSize: DEFAULT_RAG_CONFIG.chunkSize,
+      chunkOverlap: DEFAULT_RAG_CONFIG.chunkOverlap,
+      maxSingleChunkSize: DEFAULT_RAG_CONFIG.maxSingleChunkSize,
+      sqlChunkSize: DEFAULT_SQL_RAG_CONFIG.chunkSize,
+      sqlChunkOverlap: DEFAULT_SQL_RAG_CONFIG.chunkOverlap,
+      sqlMaxSingleChunkSize: DEFAULT_SQL_RAG_CONFIG.maxSingleChunkSize,
+    };
+  }
+}
 
 export interface ChunkProcessingProgress {
   stage: "preparing" | "sanitizing" | "storing" | "complete";
@@ -24,8 +49,8 @@ export type ChunkProgressCallback = (progress: ChunkProcessingProgress) => void;
 
 export function splitTextIntoChunks(
   text: string,
-  chunkSize: number = CHUNK_SIZE,
-  overlap: number = CHUNK_OVERLAP
+  chunkSize: number = DEFAULT_RAG_CONFIG.chunkSize,
+  overlap: number = DEFAULT_RAG_CONFIG.chunkOverlap
 ): string[] {
   if (!text || text.length === 0) {
     return [];
@@ -66,9 +91,42 @@ export function splitTextIntoChunks(
   return chunks;
 }
 
-export async function processChunksWithErrorHandling(
+export function splitSQLIntoChunks(text: string): string[] {
+  if (!text || text.length === 0) {
+    return [];
+  }
+
+  const pattern =
+    /(CREATE\s+(OR\s+REPLACE\s+)?(TABLE|FUNCTION|PROCEDURE|PACKAGE|VIEW|INDEX|TRIGGER|SYNONYM|SEQUENCE|TYPE|CONTEXT|DIRECTORY|JAVA))/gi;
+  const positions: number[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    positions.push(match.index);
+  }
+
+  if (positions.length === 0) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  for (let i = 0; i < positions.length; i++) {
+    const start = positions[i];
+    const end = positions[i + 1] || text.length;
+    const chunk = text.substring(start, end).trim();
+    if (chunk) {
+      chunks.push(chunk);
+    }
+  }
+
+  return chunks;
+}
+
+async function processChunksWithErrorHandlingInternal(
   chunks: string[],
   documentId: string,
+  chunkSize: number,
+  maxSingleChunkSize: number,
   onProgress?: ChunkProgressCallback
 ): Promise<ChunkProcessingResult> {
   if (onProgress) {
@@ -83,8 +141,8 @@ export async function processChunksWithErrorHandling(
 
   const sanitizeResult = sanitizeAndSplitChunks(
     chunks,
-    CHUNK_SIZE,
-    MAX_SINGLE_CHUNK_SIZE
+    chunkSize,
+    maxSingleChunkSize
   );
 
   if (onProgress) {
@@ -193,4 +251,34 @@ export async function processChunksWithErrorHandling(
   };
 }
 
-export { CHUNK_SIZE, CHUNK_OVERLAP, MAX_SINGLE_CHUNK_SIZE, BATCH_SIZE };
+export async function processChunksWithErrorHandling(
+  chunks: string[],
+  documentId: string,
+  onProgress?: ChunkProgressCallback
+): Promise<ChunkProcessingResult> {
+  const config = await getCachedRAGConfig();
+  return processChunksWithErrorHandlingInternal(
+    chunks,
+    documentId,
+    config.chunkSize,
+    config.maxSingleChunkSize,
+    onProgress
+  );
+}
+
+export async function processSQLChunksWithErrorHandling(
+  chunks: string[],
+  documentId: string,
+  onProgress?: ChunkProgressCallback
+): Promise<ChunkProcessingResult> {
+  const config = await getCachedRAGConfig();
+  return processChunksWithErrorHandlingInternal(
+    chunks,
+    documentId,
+    config.sqlChunkSize,
+    config.sqlMaxSingleChunkSize,
+    onProgress
+  );
+}
+
+export { BATCH_SIZE, DEFAULT_RAG_CONFIG, DEFAULT_SQL_RAG_CONFIG };

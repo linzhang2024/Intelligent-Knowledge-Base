@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
+import { deleteEmbeddingsByDocumentId } from "@/lib/vectorStore";
 
 const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
@@ -252,27 +253,60 @@ export async function DELETE(
       );
     }
 
-    await prisma.$transaction(async (tx) => {
-      const chunkCount = targetDocument.chunks.length;
-      if (chunkCount > 0) {
-        await tx.documentChunk.deleteMany({
+    const documentTitle = targetDocument.title;
+
+    try {
+      console.log(`[文档删除] 开始删除文档 "${documentTitle}" (ID: ${documentId})`);
+      
+      console.log(`[文档删除] 正在清理 Milvus 向量数据...`);
+      await deleteEmbeddingsByDocumentId(documentId);
+      console.log(`[文档删除] Milvus 向量数据清理完成`);
+
+      await prisma.$transaction(async (tx) => {
+        const docInTransaction = await tx.document.findUnique({
+          where: { id: documentId },
+          include: { chunks: true },
+        });
+
+        if (!docInTransaction) {
+          console.log(`[文档删除] 文档 "${documentTitle}" (ID: ${documentId}) 已被其他请求删除`);
+          return;
+        }
+
+        const chunkDeleteResult = await tx.documentChunk.deleteMany({
           where: { documentId },
         });
-        console.log(`[文档删除] 已删除文档 "${targetDocument.title}" 的 ${chunkCount} 个关联切片`);
-      }
 
-      await tx.document.update({
-        where: { id: documentId },
-        data: { deletedAt: new Date() },
+        if (chunkDeleteResult.count > 0) {
+          console.log(`[文档删除] 已删除文档 "${documentTitle}" 的 ${chunkDeleteResult.count} 个关联切片`);
+        }
+
+        await tx.document.delete({
+          where: { id: documentId },
+        });
+
+        console.log(`[文档删除] 文档 "${documentTitle}" (ID: ${documentId}) 删除成功`);
       });
-    });
 
-    return NextResponse.json(
-      {
-        message: "文档删除成功",
-      },
-      { status: 200 }
-    );
+      return NextResponse.json(
+        {
+          message: "文档删除成功",
+        },
+        { status: 200 }
+      );
+    } catch (txError) {
+      const prismaError = txError as { code?: string };
+      if (prismaError.code === "P2025") {
+        console.log(`[文档删除] 文档 "${documentTitle}" (ID: ${documentId}) 已被删除（并发处理）`);
+        return NextResponse.json(
+          {
+            message: "文档删除成功",
+          },
+          { status: 200 }
+        );
+      }
+      throw txError;
+    }
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "未授权访问") {

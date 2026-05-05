@@ -188,7 +188,11 @@ export default function SQLGeneratorPage() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.message || "请求失败");
+        let errorMessage = data.message || "请求失败";
+        if (data.suggestions && data.suggestions.length > 0) {
+          errorMessage += "\n\n建议：\n" + data.suggestions.map((s: string) => `• ${s}`).join("\n");
+        }
+        throw new Error(errorMessage);
       }
 
       const contentType = response.headers.get("content-type") || "";
@@ -225,7 +229,11 @@ export default function SQLGeneratorPage() {
                 } else if (event === "info") {
                   console.log("Info:", data.message);
                 } else if (event === "error") {
-                  setError(data.message);
+                  let errorMessage = data.message || "生成失败";
+                  if (data.suggestions && data.suggestions.length > 0) {
+                    errorMessage += "\n\n建议：\n" + data.suggestions.map((s: string) => `• ${s}`).join("\n");
+                  }
+                  setError(errorMessage);
                   setIsLoading(false);
                   setIsStreaming(false);
                   return;
@@ -292,7 +300,11 @@ export default function SQLGeneratorPage() {
             dialect,
           });
         } else {
-          throw new Error(data.message || "生成失败");
+          let errorMessage = data.message || "生成失败";
+          if (data.suggestions && data.suggestions.length > 0) {
+            errorMessage += "\n\n建议：\n" + data.suggestions.map((s: string) => `• ${s}`).join("\n");
+          }
+          throw new Error(errorMessage);
         }
       }
     } catch (err) {
@@ -412,7 +424,7 @@ export default function SQLGeneratorPage() {
                 </div>
 
                 {error && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm whitespace-pre-wrap">
                     {error}
                   </div>
                 )}

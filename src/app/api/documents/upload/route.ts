@@ -5,7 +5,8 @@ import path from "path";
 import prisma from "@/lib/prisma";
 import { formatFileSize } from "@/lib/format";
 import { requireAuth } from "@/lib/auth";
-import { embedDocuments, isEmbeddingConfigured, serializeVector } from "@/lib/embedding";
+import { embedDocuments, isEmbeddingConfigured } from "@/lib/embedding";
+import { updateChunkEmbedding, ChunkMetadata } from "@/lib/vectorStore";
 import {
   parseDocument,
   DocumentParseError,
@@ -19,7 +20,13 @@ import {
   detectSQLDialect,
 } from "@/lib/documentParser";
 import { importSQLFile, SQLImportResult } from "@/lib/sqlParser";
-import { sanitizeAndSplitChunks } from "@/lib/textSanitizer";
+import {
+  splitTextIntoChunks,
+  splitSQLIntoChunks,
+  processChunksWithErrorHandling,
+  processSQLChunksWithErrorHandling,
+} from "@/lib/documentChunkProcessor";
+import { getRAGConfig } from "@/lib/ragConfig";
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -31,103 +38,6 @@ const ALLOWED_TYPES = [
 ];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".sql"];
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
-const CHUNK_SIZE = 500;
-const CHUNK_OVERLAP = 50;
-const MAX_SINGLE_CHUNK_SIZE = 2000;
-
-function splitTextIntoChunks(text: string, chunkSize: number = CHUNK_SIZE, overlap: number = CHUNK_OVERLAP): string[] {
-  if (!text || text.length === 0) {
-    return [];
-  }
-
-  const chunks: string[] = [];
-  const sentences = text.split(/([。！？.!?\n])/).filter(s => s.trim());
-  
-  let currentChunk = "";
-  
-  for (let i = 0; i < sentences.length; i += 2) {
-    const sentence = sentences[i] + (sentences[i + 1] || "");
-    
-    if (currentChunk.length + sentence.length > chunkSize && currentChunk.length > 0) {
-      chunks.push(currentChunk.trim());
-      
-      if (overlap > 0 && currentChunk.length > overlap) {
-        const lastPart = currentChunk.slice(-overlap);
-        const lastSentenceMatch = lastPart.match(/[^。！？.!?\n]*[。！？.!?\n]?$/);
-        currentChunk = lastSentenceMatch ? lastSentenceMatch[0] : lastPart;
-      } else {
-        currentChunk = "";
-      }
-    }
-    
-    currentChunk += sentence;
-  }
-  
-  if (currentChunk.trim().length > 0) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
-}
-
-async function processChunksWithErrorHandling(
-  chunks: string[],
-  documentId: string
-): Promise<{
-  storedCount: number;
-  skippedCount: number;
-  sanitizationErrors: number;
-}> {
-  const sanitizeResult = sanitizeAndSplitChunks(
-    chunks,
-    CHUNK_SIZE,
-    MAX_SINGLE_CHUNK_SIZE
-  );
-
-  const processedChunks = sanitizeResult.chunks;
-  let storedCount = 0;
-  const skippedIndices: number[] = [];
-
-  for (let i = 0; i < processedChunks.length; i++) {
-    const chunk = processedChunks[i];
-    const chunkData = {
-      documentId,
-      index: i,
-      content: chunk,
-    };
-
-    try {
-      await prisma.documentChunk.create({
-        data: chunkData,
-      });
-      storedCount++;
-    } catch (error) {
-      console.error(
-        `[RAG 存储] 片段 ${i} 存储失败，跳过:`,
-        error instanceof Error ? error.message : "未知错误"
-      );
-      skippedIndices.push(i);
-    }
-  }
-
-  if (sanitizeResult.skippedChunks.length > 0) {
-    console.warn(
-      `[RAG 存储] 原始 ${sanitizeResult.skippedChunks.length} 个片段因清洗失败被跳过`
-    );
-  }
-
-  if (skippedIndices.length > 0) {
-    console.warn(
-      `[RAG 存储] ${skippedIndices.length} 个片段因数据库写入失败被跳过`
-    );
-  }
-
-  return {
-    storedCount,
-    skippedCount: sanitizeResult.skippedChunks.length + skippedIndices.length,
-    sanitizationErrors: sanitizeResult.sanitizationErrors,
-  };
-}
 
 const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
@@ -242,6 +152,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const isSQLFile = fileExtension.toLowerCase() === ".sql" || docType === "sql";
+
     let chunkProcessingResult: {
       storedCount: number;
       skippedCount: number;
@@ -249,9 +161,21 @@ export async function POST(request: NextRequest) {
     } | null = null;
 
     if (!parseError) {
-      textChunks = splitTextIntoChunks(extractedContent);
-      console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
-      console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段`);
+      const ragConfig = await getRAGConfig();
+      
+      if (isSQLFile) {
+        textChunks = splitSQLIntoChunks(extractedContent);
+        console.log(`[RAG 预处理] SQL文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
+        console.log(`[RAG 预处理] SQL文档 "${title}" 使用CREATE语句分割，切片数量: ${textChunks.length} 个片段`);
+      } else {
+        textChunks = splitTextIntoChunks(
+          extractedContent,
+          ragConfig.chunkSize,
+          ragConfig.chunkOverlap
+        );
+        console.log(`[RAG 预处理] 文档 "${title}" 文本长度: ${extractedContent.length} 字符`);
+        console.log(`[RAG 预处理] 文档 "${title}" 切片数量: ${textChunks.length} 个片段 (chunkSize=${ragConfig.chunkSize}, overlap=${ragConfig.chunkOverlap})`);
+      }
       
       if (textChunks.length === 0) {
         console.log(`[RAG 预处理] 文档 "${title}" 切片数量为0`);
@@ -309,10 +233,17 @@ export async function POST(request: NextRequest) {
       return newDocument;
     });
 
-    chunkProcessingResult = await processChunksWithErrorHandling(
-      textChunks,
-      document.id
-    );
+    if (isSQLFile) {
+      chunkProcessingResult = await processSQLChunksWithErrorHandling(
+        textChunks,
+        document.id
+      );
+    } else {
+      chunkProcessingResult = await processChunksWithErrorHandling(
+        textChunks,
+        document.id
+      );
+    }
 
     console.log(
       `[RAG 存储] 文档 "${title}" 片段处理结果: 存储=${chunkProcessingResult.storedCount}, 跳过=${chunkProcessingResult.skippedCount}, 清洗错误=${chunkProcessingResult.sanitizationErrors}`
@@ -321,8 +252,6 @@ export async function POST(request: NextRequest) {
     let embeddingSuccess = false;
     let embeddingError: string | null = null;
     let sqlImportResult: SQLImportResult | null = null;
-
-    const isSQLFile = fileExtension.toLowerCase() === ".sql" || docType === "sql";
 
     if (isSQLFile && extractedContent) {
       try {
@@ -372,6 +301,11 @@ export async function POST(request: NextRequest) {
           select: { id: true, content: true, index: true },
         });
 
+        const docInfo = await prisma.document.findUnique({
+          where: { id: document.id },
+          select: { knowledgeBaseId: true },
+        });
+
         const validChunks = chunks.filter(c => c.content && c.content.trim().length > 0);
         const contents = validChunks.map(c => c.content || "");
 
@@ -389,14 +323,19 @@ export async function POST(request: NextRequest) {
 
               for (let i = 0; i < batchChunks.length && i < embeddingResult.vectors.length; i++) {
                 try {
-                  await prisma.documentChunk.update({
-                    where: { id: batchChunks[i].id },
-                    data: {
-                      embedding: serializeVector(embeddingResult.vectors[i]),
-                      embeddingModel: embeddingResult.model,
-                      updatedAt: new Date(),
-                    },
-                  });
+                  const metadata: ChunkMetadata = {
+                    documentId: document.id,
+                    knowledgeBaseId: docInfo?.knowledgeBaseId || null,
+                    content: batchChunks[i].content,
+                    index: batchChunks[i].index,
+                  };
+
+                  await updateChunkEmbedding(
+                    batchChunks[i].id,
+                    embeddingResult.vectors[i],
+                    embeddingResult.model,
+                    metadata
+                  );
                 } catch (updateError) {
                   console.error(
                     `[RAG Embedding] 片段 ${batchChunks[i].index} 向量存储失败，跳过:`,

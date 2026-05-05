@@ -9,7 +9,7 @@
 ### 核心功能
 
 - 🔐 用户认证与权限管理（多角色、审核机制）
-- 📄 文档上传与管理（支持 PDF、DOCX、TXT 格式）
+- 📄 文档上传与管理（支持 PDF、DOCX、TXT、SQL 格式）
 - 📚 知识库管理（私有/公开）
 - 🔍 智能文档搜索（基于向量相似度）
 - 🤖 RAG 检索增强生成（文档切片 + 向量化）
@@ -17,6 +17,9 @@
 - 🗄️ 数据库表管理（自然语言转 SQL）
 - 📊 管理后台
 - 🔒 软删除机制
+- 🚀 **Milvus 向量数据库支持**（高性能向量搜索）
+- 🔄 **数据迁移工具**（从关系型数据库迁移到 Milvus）
+- ⚙️ **RAG 配置分离**（普通文档和 SQL 文档独立配置）
 
 ### 支持的 AI 提供商
 
@@ -30,11 +33,13 @@
 
 - **前端**：Next.js 14, React 18, Tailwind CSS
 - **后端**：Next.js API Routes
-- **数据库**：SQLite（开发环境）/ PostgreSQL（生产环境）
+- **关系型数据库**：SQLite（开发环境）/ PostgreSQL（生产环境）/ MySQL / Oracle
+- **向量数据库**：**Milvus**（高性能向量搜索，可选）
 - **ORM**：Prisma
 - **认证**：基于 Cookie 的认证机制
 - **AI**：LangChain.js, OpenAI API, DashScope API, DeepSeek API
 - **文档处理**：Mammoth (DOCX), unpdf (PDF), iconv-lite (编码转换)
+- **向量存储 SDK**：@zilliz/milvus2-sdk-node
 
 ## 快速开始
 
@@ -100,6 +105,632 @@ npx prisma migrate dev
 ```bash
 npx prisma migrate dev --name init
 ```
+
+### 数据库配置管理
+
+系统支持在管理后台中配置数据库连接，支持 **SQLite、PostgreSQL、MySQL** 和 **Oracle** 四种数据库类型。
+
+> ⚠️ **重要提示**：Prisma ORM 原生支持 SQLite、PostgreSQL 和 MySQL，但**不直接支持 Oracle**。Oracle 配置仅用于测试连接，实际使用需要额外配置。
+
+#### 数据库类型对比
+
+| 数据库类型 | Prisma 原生支持 | 推荐使用场景 | 默认端口 | 默认用户 | 默认数据库 |
+|-----------|----------------|-------------|---------|---------|-----------|
+| **SQLite** | ✅ 是 | 开发环境、小型应用 | - | - | dev.db |
+| **PostgreSQL** | ✅ 是 | 生产环境、企业级 | 5432 | postgres | intelligent_knowledge_base |
+| **MySQL** | ✅ 是 | 生产环境、Web应用 | 3306 | root | intelligent_knowledge_base |
+| **Oracle** | ❌ 否 | 企业级遗留系统 | 1521 | system | ORCL |
+
+#### 方式一：环境变量配置（初始配置）
+
+编辑 `.env` 文件，设置数据库连接：
+
+**SQLite 配置**：
+```env
+DATABASE_URL="file:./dev.db"
+```
+
+**PostgreSQL 配置**：
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/intelligent_knowledge_base"
+DB_USER="postgres"
+DB_PASSWORD="postgres"
+DB_NAME="intelligent_knowledge_base"
+DB_PORT="5432"
+DB_HOST="localhost"
+```
+
+**MySQL 配置**：
+```env
+DATABASE_URL="mysql://root:password@localhost:3306/intelligent_knowledge_base"
+DB_USER="root"
+DB_PASSWORD="your_password"
+DB_NAME="intelligent_knowledge_base"
+DB_PORT="3306"
+DB_HOST="localhost"
+```
+
+**Oracle 配置**（仅用于测试连接）：
+```env
+DATABASE_URL="oracle:thin:system/password@localhost:1521:ORCL"
+DB_USER="system"
+DB_PASSWORD="your_password"
+DB_PORT="1521"
+DB_HOST="localhost"
+DB_SID="ORCL"
+# 或使用服务名
+DB_SERVICE_NAME="ORCL"
+```
+
+#### 方式二：管理后台配置（运行时切换）
+
+1. 启动应用并以管理员身份登录
+2. 进入「管理后台」→「系统设置」→「数据库配置」
+3. 选择数据库类型并填写相应配置：
+
+**通用配置项**：
+- **主机地址**：数据库服务器地址（默认：localhost）
+- **端口**：数据库端口
+- **用户名**：数据库用户名
+- **密码**：数据库密码
+- **数据库名**：数据库名称
+
+**Oracle 特有配置项**：
+- **SID**：数据库实例名（如 ORCL、XE）
+- **Service Name**：服务名（可选，用于 Oracle 12c+）
+
+> **重要提示**：修改数据库配置后需要重启服务才能生效。配置会保存到 `.env` 文件中。
+
+#### 数据库连接测试
+
+在管理后台的数据库配置页面，可以点击「测试连接」按钮验证配置是否正确：
+
+- **SQLite**：检查数据库文件是否存在或可创建
+- **PostgreSQL**：尝试建立实际连接并执行 `SELECT 1`
+- **MySQL**：尝试建立实际连接并执行 `SELECT 1`
+  - 需要先安装 `mysql2` 驱动：`npm install mysql2`
+- **Oracle**：尝试建立实际连接并执行 `SELECT 1 FROM DUAL`
+  - 需要先安装 `oracledb` 驱动：`npm install oracledb`
+  - 需要安装 Oracle Instant Client
+
+#### 切换数据库类型
+
+如果需要切换数据库类型，请按照以下步骤操作：
+
+1. 在管理后台配置新的数据库连接
+2. 点击「测试连接」确保连接正常
+3. 点击「保存数据库配置」
+4. **重启应用服务**以应用新配置
+5. 在新数据库上执行迁移：
+   ```bash
+   npx prisma migrate dev --name init
+   ```
+
+> ⚠️ 注意：切换数据库不会自动迁移数据。需要手动导出旧数据库数据并导入新数据库。
+
+### 数据存储架构
+
+系统采用**分层存储架构**，同时支持**关系型数据库**和**向量数据库**，两者分工明确，协同工作。
+
+#### 整体架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              智能知识库系统                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                          应用层                                        │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
+│  │  │ 用户管理  │  │ 知识库管理│  │ 文档管理  │  │   向量搜索/RAG    │   │   │
+│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └─────────┬────────┘   │   │
+│  └───────┼──────────────┼──────────────┼───────────────────┼───────────┘   │
+│          │              │              │                   │               │
+│          └──────────────┴──────────────┴───────────────────┘               │
+│                                          │                                   │
+│                                          ▼                                   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                       数据访问层 (Prisma ORM)                        │   │
+│  │  ┌─────────────────────────────────────────────────────────────┐   │   │
+│  │  │  关系型数据库操作  │  向量存储工厂 (vectorStore)              │   │   │
+│  │  └───────────────────┴──────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                          │                                   │
+│                    ┌─────────────────────┴─────────────────────┐           │
+│                    ▼                                           ▼           │
+│  ┌─────────────────────────────┐         ┌─────────────────────────────┐ │
+│  │      关系型数据库            │         │      向量数据库 (可选)       │ │
+│  │  (SQLite/PostgreSQL/MySQL/  │         │         (Milvus)             │ │
+│  │   Oracle)                   │         │                               │ │
+│  │                             │         │  ┌─────────────────────────┐ │ │
+│  │  存储所有业务数据            │         │  │  Collection:             │ │ │
+│  │  + 用户、角色、权限          │         │  │  document_chunks        │ │ │
+│  │  + 知识库元数据              │         │  │                         │ │ │
+│  │  + 文档元数据                │         │  │  仅存储:                 │ │ │
+│  │  + 文档分块内容              │         │  │  - 向量数据 (embedding) │ │ │
+│  │  + 向量数据副本 (JSON 格式) │         │  │  - 关联元数据           │ │ │
+│  │  + 系统配置                  │         │  │  - 文本内容冗余          │ │ │
+│  │  + SQL 查询历史              │         │  └─────────────────────────┘ │ │
+│  │  + 数据库表元数据            │         │                               │ │
+│  └─────────────────────────────┘         └─────────────────────────────┘ │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 数据存储分工详解
+
+| 数据类型 | 存储位置 | 说明 |
+|---------|---------|------|
+| **用户数据** | 关系型数据库 | 用户表、角色、权限、认证信息 |
+| **知识库元数据** | 关系型数据库 | 知识库名称、描述、可见性、所有者 |
+| **文档元数据** | 关系型数据库 | 文档标题、文件类型、大小、状态、作者 |
+| **文档分块内容** | 关系型数据库 | 分块后的文本内容（用于 RAG 上下文） |
+| **向量数据副本** | 关系型数据库 | `document_chunks.embedding` 字段，JSON 格式 |
+| **向量数据索引** | 向量数据库 (Milvus) | `embedding` 字段，FloatVector 类型，带索引 |
+| **向量关联元数据** | 向量数据库 (Milvus) | document_id, knowledge_base_id, content 等 |
+| **系统配置** | 关系型数据库 | AI 配置、RAG 配置、Milvus 配置等 |
+| **SQL 查询历史** | 关系型数据库 | 自然语言转 SQL 的查询记录 |
+| **数据库表元数据** | 关系型数据库 | 表结构、列信息、表关系 |
+
+#### 关系型数据库表结构
+
+系统使用 Prisma ORM 管理关系型数据库，包含以下核心表：
+
+| 表名 | 主要字段 | 说明 |
+|------|---------|------|
+| **users** | id, email, password, name, role, status | 用户表 |
+| **knowledge_bases** | id, name, description, visibility, ownerId | 知识库表 |
+| **documents** | id, title, content, fileUrl, fileType, status, authorId, knowledgeBaseId | 文档表 |
+| **document_chunks** | id, documentId, index, content, **embedding** (JSON), embeddingModel | 文档分块表 |
+| **system_configs** | configKey, configValue, description | 系统配置表 |
+| **database_tables** | name, schemaName, tableComment, knowledgeBaseId | 数据库表元数据 |
+| **table_columns** | tableId, name, dataType, isNullable, isPrimaryKey | 表列信息 |
+| **table_relations** | fromTableId, fromColumnName, toTableId, toColumnName | 表关系 |
+| **sql_queries** | query, queryType, description, tables, columns | 保存的 SQL 查询 |
+| **query_history** | userQuery, generatedSQL, executionResult, isSuccess | 查询历史 |
+
+#### 向量数据库集合结构
+
+当 Milvus 启用时，系统会自动创建 `document_chunks` 集合：
+
+| 字段名 | 数据类型 | 说明 |
+|--------|---------|------|
+| **id** | VarChar(64) | 主键，使用 chunk_id |
+| **chunk_id** | VarChar(64) | 文档切片 ID（对应关系型数据库的 id） |
+| **document_id** | VarChar(64) | 所属文档 ID |
+| **knowledge_base_id** | VarChar(64) | 所属知识库 ID |
+| **content** | VarChar(65535) | 切片文本内容（冗余存储，用于快速检索） |
+| **embedding** | FloatVector | 向量数据（维度由配置决定） |
+| **model** | VarChar(256) | 使用的 Embedding 模型 |
+
+**索引配置**：
+- **索引类型**：IVF_FLAT
+- **度量类型**：COSINE（余弦相似度）
+- **参数**：nlist = 1024
+
+#### 双后端向量存储机制
+
+系统采用**双后端向量存储架构**，确保数据安全和灵活切换：
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                         向量写入流程 (双写)                               │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│   文档上传 / 重新解析                                                   │
+│            │                                                           │
+│            ▼                                                           │
+│   ┌─────────────────┐                                                  │
+│   │  生成 Embedding  │                                                  │
+│   │  (向量数据)       │                                                  │
+│   └────────┬────────┘                                                  │
+│            │                                                           │
+│    ┌───────┴────────┐                                                  │
+│    ▼                ▼                                                  │
+│  ┌─────────┐    ┌──────────────────────────────────────────┐          │
+│  │关系型数据库│    │      Milvus 向量数据库 (如果已启用)      │          │
+│  │         │    │                                          │          │
+│  │- 序列化   │    │- 原生 FloatVector 类型                │          │
+│  │  为 JSON  │    │- 专用向量索引 (IVF_FLAT)              │          │
+│  │  字符串   │    │- 高性能相似度搜索                       │          │
+│  │- 存储到    │    │                                          │          │
+│  │  embedding │    │                                          │          │
+│  │  字段      │    │                                          │          │
+│  └─────────┘    └──────────────────────────────────────────┘          │
+│                                                                        │
+│   ✅ 确保数据一致性和安全性                                             │
+│   ✅ 可随时切换向量存储后端                                             │
+│   ✅ 无需担心数据丢失                                                   │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+**写入机制**：
+1. **双写策略**：新上传的文档向量会同时写入：
+   - 关系型数据库的 `document_chunks.embedding` 字段（JSON 格式）
+   - Milvus 的 `document_chunks` 集合（如果 Milvus 已启用）
+
+2. **数据一致性**：
+   - 关系型数据库中的向量数据**始终保留**
+   - Milvus 中的向量数据是**副本**，用于高性能搜索
+   - 可随时在两种后端之间切换
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                         向量搜索流程 (自动切换)                          │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│   用户查询                                                              │
+│      │                                                                 │
+│      ▼                                                                 │
+│   ┌────────────────────────────────────────────────────────────────┐  │
+│   │              向量存储工厂 (vectorStore)                         │  │
+│   │                                                                │  │
+│   │   检查 milvus.enabled 配置                                      │  │
+│   │            │                                                    │  │
+│   │     ┌──────┴──────┐                                             │  │
+│   │     ▼             ▼                                             │  │
+│   │ ┌────────┐   ┌──────────────────────────────────────────────┐  │  │
+│   │ │ Milvus │   │           关系型数据库                        │  │  │
+│   │ │ 已启用 │   │                                              │  │  │
+│   │ └───┬────┘   │                                              │  │  │
+│   │     │        │                                              │  │  │
+│   │     ▼        │                                              │  │  │
+│   │ ┌─────────┐  │  ┌────────────────────────────────────────┐  │  │  │
+│   │ │ Milvus  │  │  │  1. 查询所有非空 embedding 的分块       │  │  │  │
+│   │ │ 专用索引 │  │  │  2. 反序列化 JSON 向量数据              │  │  │  │
+│   │ │ 搜索     │  │  │  3. 内存计算余弦相似度                 │  │  │  │
+│   │ │          │  │  │  4. 按相似度排序并返回结果              │  │  │  │
+│   │ │ 高性能   │  │  │                                        │  │  │  │
+│   │ │ 适合     │  │  │  ✅ 简单，无需额外部署                │  │  │  │
+│   │ │ 大规模   │  │  │  ⚠️  数据量 > 10K 时性能下降         │  │  │  │
+│   │ │ 数据     │  │  │                                        │  │  │  │
+│   │ └─────────┘  │  └────────────────────────────────────────┘  │  │  │
+│   │              │                                              │  │  │
+│   │              └──────────────────────────────────────────────┘  │  │
+│   │                                                                │  │
+│   └────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+**搜索机制**：
+1. **自动切换**：根据 `milvus.enabled` 配置自动选择搜索后端
+2. **Milvus 启用时**：
+   - 使用 Milvus 专用向量索引进行搜索
+   - 高性能，适合大规模数据（> 10K 向量）
+3. **Milvus 未启用时**：
+   - 从关系型数据库读取向量数据（JSON 格式）
+   - 反序列化后在内存中计算余弦相似度
+   - 适合小规模数据（< 10K 向量）
+
+#### 数据迁移流程
+
+系统提供完整的数据迁移工具，支持从关系型数据库迁移向量数据到 Milvus：
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           数据迁移流程                                     │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   关系型数据库 (document_chunks 表)                                     │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  embedding 字段 (JSON 格式的向量字符串)                         │   │
+│   │  例: "[0.123, 0.456, 0.789, ...]"                            │   │
+│   └─────────────────────────────┬──────────────────────────────────┘   │
+│                                 │                                        │
+│                                 ▼                                        │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │                      迁移处理过程                                │   │
+│   │                                                                │   │
+│   │  1. 统计数据：统计 document_chunks 表中非空 embedding 的数量   │   │
+│   │                                                                │   │
+│   │  2. 批量读取：每次读取 100 条记录 (分页)                       │   │
+│   │                                                                │   │
+│   │  3. 反序列化：JSON.parse(embedding) → number[]                │   │
+│   │                                                                │   │
+│   │  4. 批量插入：插入 Milvus 的 document_chunks 集合              │   │
+│   │                                                                │   │
+│   │  5. 更新进度：更新 migrationStatus (processed/errors)         │   │
+│   │                                                                │   │
+│   └─────────────────────────────┬──────────────────────────────────┘   │
+│                                 │                                        │
+│                                 ▼                                        │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │                    Milvus 向量数据库                            │   │
+│   │                                                                │   │
+│   │  Collection: document_chunks                                   │   │
+│   │  ┌──────────────────────────────────────────────────────────┐  │   │
+│   │  │  embedding 字段 (FloatVector 类型)                        │  │   │
+│   │  │  + 专用向量索引 (IVF_FLAT)                                │  │   │
+│   │  │  + 高性能相似度搜索                                        │  │   │
+│   │  │  + 支持大规模数据                                          │  │   │
+│   │  └──────────────────────────────────────────────────────────┘  │   │
+│   │                                                                │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│   ✅ 幂等性：可多次执行，已存在的向量会被覆盖 (chunk_id 作为主键)       │
+│   ✅ 错误处理：单个向量迁移失败不影响其他向量，错误会被记录              │
+│   ✅ 向后兼容：关系型数据库中的向量数据不会被删除                       │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 数据安全保障
+
+| 保障机制 | 说明 |
+|---------|------|
+| **双写策略** | 向量数据同时写入关系型数据库和 Milvus |
+| **主副本架构** | 关系型数据库是主存储，Milvus 是副本/索引 |
+| **向后兼容** | 可随时切换向量存储后端，无需数据转换 |
+| **幂等迁移** | 迁移工具可多次执行，不会重复或丢失数据 |
+| **软删除** | 删除操作不会物理删除数据，可恢复 |
+
+### 向量数据库配置（Milvus）
+
+> 📖 **详细配置指南**：关于 Milvus 的完整配置、管理和故障排除，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md)。
+
+系统支持 **Milvus** 高性能向量数据库，用于存储和搜索文档向量。Milvus 是一个开源的向量数据库，专门为 AI 应用设计，支持：
+
+- 高性能向量相似度搜索
+- 大规模向量存储
+- 多种索引类型（IVF_FLAT、IVF_PQ、HNSW 等）
+- 动态字段支持
+
+#### 向量存储架构
+
+系统采用**双后端向量存储架构**：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        应用层                                      │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐ │
+│  │  文档上传    │    │  向量搜索    │    │    文档删除          │ │
+│  └──────┬──────┘    └──────┬──────┘    └──────────┬──────────┘ │
+└─────────┼───────────────────┼───────────────────────┼────────────┘
+          │                   │                       │
+          ▼                   ▼                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    向量存储工厂 (vectorStoreFactory)              │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │  根据 milvus.enabled 配置自动选择后端                          │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+          │                   │
+          ▼                   ▼
+┌─────────────────┐    ┌─────────────────────────────────────────┐
+│  关系型数据库    │    │           Milvus 向量数据库              │
+│  (Database)     │    │                                         │
+│                 │    │  ┌─────────────────────────────────┐   │
+│  ┌───────────┐  │    │  │    Collection: document_chunks   │   │
+│  │document_  │  │    │  │                                 │   │
+│  │chunks     │  │    │  │  字段:                           │   │
+│  │- id       │  │    │  │  • id (PK, VarChar)            │   │
+│  │- documentId│ │    │  │  • chunk_id (VarChar)           │   │
+│  │- index    │  │    │  │  • document_id (VarChar)        │   │
+│  │- content  │  │    │  │  • knowledge_base_id (VarChar)  │   │
+│  │- embedding│  │    │  │  • content (VarChar, 65535)    │   │
+│  │  (JSON)   │  │    │  │  • embedding (FloatVector)      │   │
+│  │- embedding│  │    │  │  • model (VarChar)              │   │
+│  │  Model    │  │    │  │                                 │   │
+│  └───────────┘  │    │  索引类型: IVF_FLAT (COSINE 相似度)  │   │
+│                 │    │  └─────────────────────────────────┘   │
+└─────────────────┘    └─────────────────────────────────────────┘
+```
+
+#### 向量后端对比
+
+| 特性 | 关系型数据库（默认） | Milvus 向量数据库 |
+|------|---------------------|-------------------|
+| **存储方式** | 向量以 JSON 存储在 `embedding` 字段 | 专用向量存储引擎 |
+| **搜索方式** | 内存计算余弦相似度 | 专用索引加速搜索 |
+| **性能** | 适合小规模数据（< 10K 向量） | 适合大规模数据（> 10K 向量） |
+| **扩展性** | 受限于数据库查询性能 | 支持分布式部署，水平扩展 |
+| **配置要求** | 无需额外配置 | 需要部署 Milvus 服务 |
+| **适用场景** | 开发测试、小型应用 | 生产环境、高性能搜索 |
+
+#### 双后端特性
+
+系统支持双后端同时工作：
+
+1. **写入时双写**：新上传的文档向量会同时写入关系型数据库和 Milvus（如果 Milvus 已启用）
+2. **搜索时自动切换**：根据 `milvus.enabled` 配置自动选择搜索后端
+3. **向后兼容**：关系型数据库中的向量数据始终保留，可随时切换回原后端
+
+#### 配置 Milvus
+
+##### 快速开始
+
+项目已提供完整的 Milvus Docker Compose 配置文件 `docker-compose-milvus.yml`。
+
+**启动 Milvus 服务**：
+
+```bash
+docker-compose -f docker-compose-milvus.yml up -d
+```
+
+**服务组件**：
+
+| 服务 | 容器名 | 端口 | 说明 |
+|------|--------|------|------|
+| **Milvus** | milvus-standalone | 19530, 9091 | 向量数据库主服务 |
+| **etcd** | milvus-etcd | 2379-2380 | 元数据存储 |
+| **MinIO** | milvus-minio | 9000-9001 | 对象存储 |
+
+> 📖 **详细配置**：关于 Milvus 的完整配置、管理命令、故障排除和高级设置，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md)。
+
+##### 配置 Milvus 连接
+
+有两种配置方式：
+
+**方式一：管理后台配置（推荐）**
+
+1. 启动应用并以管理员身份登录
+2. 进入「管理后台」→「系统设置」→「Milvus 配置」
+3. 填写以下配置：
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| **启用 Milvus** | 是否使用 Milvus 作为向量存储后端 | 关闭 |
+| **主机地址** | Milvus 服务器地址 | localhost |
+| **端口** | Milvus 服务端口 | 19530 |
+| **用户名** | Milvus 认证用户名（可选） | 空 |
+| **密码** | Milvus 认证密码（可选） | 空 |
+| **集合名称** | 存储向量的集合名称 | document_chunks |
+| **向量维度** | Embedding 模型输出的向量维度 | 1024 |
+
+> ⚠️ **注意**：向量维度必须与实际使用的 Embedding 模型输出维度一致：
+> - DashScope `text-embedding-v1/v2`: 1024 维
+> - DashScope `text-embedding-v3`: 1024 维
+> - OpenAI `text-embedding-3-small`: 1536 维（默认）
+> - OpenAI `text-embedding-3-large`: 3072 维
+> - OpenAI `text-embedding-ada-002`: 1536 维
+
+**方式二：环境变量配置**
+
+编辑 `.env` 文件（可选，管理后台配置优先级更高）：
+
+```env
+# Milvus 配置（可选）
+MILVUS_ENABLED=false
+MILVUS_HOST=localhost
+MILVUS_PORT=19530
+MILVUS_USERNAME=
+MILVUS_PASSWORD=
+MILVUS_COLLECTION=document_chunks
+MILVUS_DIMENSIONS=1024
+```
+
+#### Milvus 配置流程
+
+1. **测试连接**：点击「测试连接」按钮验证 Milvus 服务是否可访问
+2. **初始化集合**：点击「初始化集合」创建必要的集合和索引
+   - 会自动创建 `document_chunks` 集合
+   - 会自动创建 `embedding` 字段的 IVF_FLAT 索引（余弦相似度）
+   - 会自动加载集合到内存
+3. **启用 Milvus**：开启「启用 Milvus」开关并保存
+4. **数据迁移**：如果有历史数据，点击「开始迁移」将向量从关系型数据库迁移到 Milvus
+
+#### 数据迁移
+
+系统提供完整的数据迁移工具，支持从关系型数据库迁移向量数据到 Milvus。
+
+##### 迁移流程
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                           数据迁移流程                                 │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐   │
+│  │  1. 统计数据  │────▶│  2. 批量读取  │────▶│  3. 反序列化向量 │   │
+│  │  (统计已有   │     │  (从 document │     │  (JSON → number[]) │   │
+│  │   向量数量)  │     │   _chunks 表) │     │                  │   │
+│  └──────────────┘     └──────────────┘     └──────────────────┘   │
+│                                                        │             │
+│                                                        ▼             │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐   │
+│  │  6. 迁移完成  │◀────│  5. 更新进度  │◀────│  4. 插入 Milvus │   │
+│  │  (显示统计   │     │  (processed  │     │  (批量插入向量)   │   │
+│  │   信息)     │     │   / errors)   │     │                  │   │
+│  └──────────────┘     └──────────────┘     └──────────────────┘   │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+##### 迁移操作
+
+**方式一：管理后台迁移（推荐）**
+
+1. 进入「管理后台」→「系统设置」→「Milvus 配置」
+2. 在「数据迁移」区域：
+   - 查看当前 Milvus 状态和向量数量
+   - 查看迁移进度（如果正在迁移）
+3. 点击「开始迁移」按钮启动迁移
+
+迁移状态显示：
+- **状态**：运行中 / 已停止
+- **进度**：已处理 / 总数
+- **错误**：迁移失败的数量
+- **进度条**：可视化展示迁移进度
+
+**方式二：API 调用**
+
+```bash
+# 启动全量迁移
+curl -X POST http://localhost:3005/api/admin/milvus-migrate \
+  -H "Content-Type: application/json" \
+  -d '{"action": "start"}'
+
+# 获取迁移状态
+curl http://localhost:3005/api/admin/milvus-migrate
+
+# 迁移单个文档
+curl -X POST http://localhost:3005/api/admin/milvus-migrate \
+  -H "Content-Type: application/json" \
+  -d '{"action": "migrateDocument", "documentId": "doc-xxx"}'
+```
+
+##### 迁移说明
+
+- **批量处理**：每次处理 100 个向量，减少内存占用
+- **错误处理**：单个向量迁移失败不影响其他向量，错误会被记录
+- **幂等性**：可多次执行迁移，已存在的向量会被覆盖（使用 chunk_id 作为主键）
+- **向后兼容**：关系型数据库中的向量数据不会被删除
+
+#### Milvus 集合结构
+
+系统自动创建的 `document_chunks` 集合结构：
+
+| 字段名 | 数据类型 | 说明 |
+|--------|---------|------|
+| **id** | VarChar(64) | 主键，使用 chunk_id |
+| **chunk_id** | VarChar(64) | 文档切片 ID |
+| **document_id** | VarChar(64) | 所属文档 ID |
+| **knowledge_base_id** | VarChar(64) | 所属知识库 ID |
+| **content** | VarChar(65535) | 切片文本内容 |
+| **embedding** | FloatVector | 向量数据（维度由配置决定） |
+| **model** | VarChar(256) | 使用的 Embedding 模型 |
+
+**索引配置**：
+- **索引类型**：IVF_FLAT
+- **度量类型**：COSINE（余弦相似度）
+- **参数**：nlist = 1024
+
+#### RAG 配置分离
+
+系统支持**普通文档**和 **SQL 文档**的分块参数独立配置。
+
+##### 配置项说明
+
+| 配置项 | 普通文档默认值 | SQL 文档默认值 | 说明 |
+|--------|---------------|---------------|------|
+| **文本分片大小** (chunkSize) | 500 字符 | 4000 字符 | 每个文本片段的目标大小 |
+| **分片重叠大小** (chunkOverlap) | 50 字符 | 0 字符 | 相邻片段之间的重叠字符数 |
+| **最大单块大小** (maxSingleChunkSize) | 2000 字符 | 8000 字符 | 单个片段的最大限制 |
+
+##### SQL 文档特殊处理
+
+SQL 文档使用不同的分块策略：
+
+1. **按 CREATE 语句边界分割**：
+   - 匹配 `CREATE TABLE`、`CREATE OR REPLACE FUNCTION` 等语句
+   - 每个 DDL 语句作为独立片段
+   - 保持语句完整性
+
+2. **推荐配置**：
+   - 较大的分片大小（4000 字符）
+   - 零重叠（避免语句重复）
+   - 较大的最大单块限制（8000 字符）
+
+##### 配置方式
+
+进入「管理后台」→「系统设置」→「RAG 配置」：
+
+- **普通文档**：适用于 PDF、DOCX、TXT 等普通文档
+- **SQL 文档**：适用于 `.sql` 脚本文件
+
+> **提示**：修改配置后，新上传的文档会使用新配置。已上传的文档需要「重新解析」才能应用新配置。
 
 ### AI 配置
 
@@ -259,8 +890,77 @@ npm run dev
 
 #### 5.5 系统设置 (`/admin/settings`)
 
-- AI 配置（Embedding、LLM）
-- API Key 加密存储
+系统设置页面包含三个标签页，提供完整的系统配置能力：
+
+##### 标签页 1：基本设置
+
+- **存储设置**：上传文件存储位置配置
+- **安全设置**：会话过期时间、密码策略等
+- **数据库配置**：数据库连接配置（支持 SQLite/PostgreSQL/MySQL/Oracle）
+  - 测试数据库连接
+  - 保存数据库配置（需重启服务生效）
+- **向量存储后端**：显示当前使用的向量存储后端（关系型数据库 / Milvus）
+
+##### 标签页 2：RAG 配置
+
+支持**普通文档**和 **SQL 文档**的分块参数独立配置：
+
+**普通文档配置**（适用于 PDF、DOCX、TXT）：
+- 文本分片大小 (chunkSize)：默认 500 字符
+- 分片重叠大小 (chunkOverlap)：默认 50 字符
+- 最大单块大小 (maxSingleChunkSize)：默认 2000 字符
+
+**SQL 文档配置**（适用于 `.sql` 文件）：
+- 文本分片大小 (chunkSize)：默认 4000 字符
+- 分片重叠大小 (chunkOverlap)：默认 0 字符
+- 最大单块大小 (maxSingleChunkSize)：默认 8000 字符
+
+> SQL 文档使用特殊的分块策略：按 `CREATE` 语句边界分割，保持 DDL 语句完整性。
+
+##### 标签页 3：Milvus 配置
+
+**Milvus 连接配置**：
+- 启用 Milvus：开关控制是否使用 Milvus 作为向量存储后端
+- 主机地址：Milvus 服务器地址（默认：localhost）
+- 端口：Milvus 服务端口（默认：19530）
+- 用户名：Milvus 认证用户名（可选）
+- 密码：Milvus 认证密码（可选）
+- 集合名称：存储向量的集合名称（默认：document_chunks）
+- 向量维度：Embedding 模型输出的向量维度（默认：1024）
+
+**操作按钮**：
+- **测试连接**：验证 Milvus 服务是否可访问
+- **初始化集合**：创建集合和索引（IVF_FLAT，余弦相似度）
+- **保存配置**：保存所有配置
+
+**数据迁移区域**：
+- **Milvus 状态**：显示是否启用、集合名称、向量总数、维度
+- **迁移状态**：显示是否运行中、进度、错误数量
+- **进度条**：可视化展示迁移进度
+- **开始迁移**：启动全量数据迁移（从关系型数据库到 Milvus）
+
+> ⚠️ **重要提示**：向量维度必须与实际使用的 Embedding 模型输出维度一致。例如：
+> - DashScope `text-embedding-v2`: 1024 维
+> - OpenAI `text-embedding-3-small`: 1536 维
+
+#### 5.6 AI 配置
+
+AI 配置已整合到系统设置的基本设置中，包括：
+
+**Embedding 配置**：
+- 提供商：OpenAI / DeepSeek / DashScope
+- API Key：加密存储
+- Base URL：可选（用于兼容 OpenAI 接口的第三方服务）
+- 模型名称：如 `text-embedding-v2`、`text-embedding-3-small` 等
+
+**LLM 配置**：
+- 提供商：OpenAI / DeepSeek / DashScope
+- API Key：加密存储
+- Base URL：可选
+- 模型名称：如 `qwen-plus`、`gpt-3.5-turbo` 等
+- 温度参数：控制回答的随机性（0-1）
+
+> 敏感信息（API Key）会使用 `crypto.ts` 中的加密函数加密后存储在数据库的 `system_config` 表中。
 
 ## 核心功能说明
 
@@ -422,6 +1122,9 @@ npm run dev
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET/POST | `/api/admin/ai-config` | 获取/保存 AI 配置 |
+| GET/PUT/POST | `/api/admin/milvus-config` | 获取/保存 Milvus 配置 / 测试连接 / 初始化集合 |
+| GET/POST | `/api/admin/milvus-migrate` | 获取迁移状态 / 启动迁移 / 单文档迁移 |
+| GET/PUT/POST | `/api/admin/rag-config` | 获取/保存 RAG 配置 |
 | GET/DELETE | `/api/admin/documents` | 获取文档列表/批量删除 |
 | GET/PATCH/DELETE | `/api/admin/documents/[id]` | 获取/更新/删除单个文档 |
 | POST | `/api/admin/documents/[id]/reparse` | 重新解析文档 |
@@ -430,6 +1133,117 @@ npm run dev
 | GET | `/api/admin/stats` | 获取系统统计 |
 | GET | `/api/admin/users` | 获取用户列表 |
 | PATCH/DELETE | `/api/admin/users/[id]` | 更新/删除用户 |
+
+#### Milvus 配置 API 详情
+
+**GET /api/admin/milvus-config**
+
+获取当前 Milvus 配置和统计信息：
+
+```json
+{
+  "config": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 19530,
+    "username": "",
+    "password": "",
+    "collection": "document_chunks",
+    "dimensions": 1024
+  },
+  "stats": {
+    "enabled": false,
+    "collectionName": "document_chunks",
+    "totalVectors": 0,
+    "dimensions": 1024
+  },
+  "defaultConfig": { ... }
+}
+```
+
+**PUT /api/admin/milvus-config**
+
+保存 Milvus 配置：
+
+```json
+{
+  "enabled": true,
+  "host": "localhost",
+  "port": 19530,
+  "username": "",
+  "password": "",
+  "collection": "document_chunks",
+  "dimensions": 1024
+}
+```
+
+**POST /api/admin/milvus-config**
+
+执行操作：
+
+```json
+// 测试连接
+{
+  "action": "test",
+  "host": "localhost",
+  "port": 19530,
+  ...
+}
+
+// 初始化集合
+{
+  "action": "initCollection"
+}
+```
+
+#### 数据迁移 API 详情
+
+**GET /api/admin/milvus-migrate**
+
+获取迁移状态：
+
+```json
+{
+  "enabled": true,
+  "milvusStats": {
+    "enabled": true,
+    "collectionName": "document_chunks",
+    "totalVectors": 1500,
+    "dimensions": 1024
+  },
+  "migrationStatus": {
+    "isRunning": false,
+    "total": 2000,
+    "processed": 1500,
+    "errors": 5,
+    "startTime": "2026-05-05T10:00:00Z",
+    "endTime": "2026-05-05T10:15:00Z"
+  }
+}
+```
+
+**POST /api/admin/milvus-migrate**
+
+执行迁移操作：
+
+```json
+// 启动全量迁移
+{
+  "action": "start"
+}
+
+// 迁移单个文档
+{
+  "action": "migrateDocument",
+  "documentId": "doc-xxx"
+}
+
+// 清除文档向量
+{
+  "action": "clearDocument",
+  "documentId": "doc-xxx"
+}
+```
 
 ### 问答与搜索 API
 
@@ -447,6 +1261,8 @@ npm run dev
 
 ## 环境变量
 
+### 数据库配置
+
 | 变量名 | 描述 | 默认值 |
 |--------|------|--------|
 | DATABASE_URL | 数据库连接字符串 | - |
@@ -455,10 +1271,34 @@ npm run dev
 | DB_NAME | PostgreSQL 数据库名 | intelligent_knowledge_base |
 | DB_PORT | PostgreSQL 端口 | 5432 |
 | DB_HOST | PostgreSQL 主机 | localhost |
+
+### AI 配置
+
+| 变量名 | 描述 | 默认值 |
+|--------|------|--------|
 | DASHSCOPE_API_KEY | 阿里云 DashScope API Key | - |
+| OPENAI_API_KEY | OpenAI API Key | - |
+| OPENAI_BASE_URL | OpenAI Base URL | 可选 |
+| DEEPSEEK_API_KEY | DeepSeek API Key | - |
+| EMBEDDING_PROVIDER | Embedding 提供商 | dashscope |
 | EMBEDDING_MODEL | Embedding 模型名称 | text-embedding-v2 |
+| LLM_PROVIDER | LLM 提供商 | dashscope |
 | LLM_MODEL | LLM 模型名称 | qwen-plus |
 | LLM_TEMPERATURE | LLM 温度参数 | 0.7 |
+
+### Milvus 向量数据库配置（可选）
+
+| 变量名 | 描述 | 默认值 |
+|--------|------|--------|
+| MILVUS_ENABLED | 是否启用 Milvus | false |
+| MILVUS_HOST | Milvus 服务器地址 | localhost |
+| MILVUS_PORT | Milvus 服务端口 | 19530 |
+| MILVUS_USERNAME | Milvus 认证用户名 | 空 |
+| MILVUS_PASSWORD | Milvus 认证密码 | 空 |
+| MILVUS_COLLECTION | 向量集合名称 | document_chunks |
+| MILVUS_DIMENSIONS | 向量维度（需与模型匹配） | 1024 |
+
+> ⚠️ **注意**：管理后台配置优先级高于环境变量。建议通过管理后台页面进行配置，配置会保存到数据库的 `system_config` 表中。
 
 ## 常用命令
 
@@ -502,6 +1342,8 @@ npx prisma generate
 
 ### Docker 操作
 
+**PostgreSQL 数据库操作**：
+
 ```bash
 # 启动数据库
 docker-compose up -d
@@ -515,6 +1357,27 @@ docker-compose down -v
 # 查看数据库日志
 docker-compose logs -f postgres
 ```
+
+**Milvus 向量数据库操作**：
+
+```bash
+# 启动 Milvus 服务
+docker-compose -f docker-compose-milvus.yml up -d
+
+# 停止 Milvus 服务
+docker-compose -f docker-compose-milvus.yml down
+
+# 重启 Milvus 服务
+docker-compose -f docker-compose-milvus.yml restart
+
+# 查看所有容器状态
+docker ps -a
+
+# 查看 Milvus 日志
+docker logs milvus-standalone
+```
+
+> 📖 **详细管理命令**：关于 Milvus 的完整管理命令、数据备份恢复、性能监控等，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md)。
 
 ## 安全特性
 
@@ -605,6 +1468,90 @@ npx prisma migrate dev
 2. 检查文档是否有可提取的文本内容
 3. 查看 `uploads` 目录权限
 
+> 📖 **Milvus 故障排除**：关于 Milvus 连接失败、搜索结果异常、数据迁移失败等问题的详细解决方案，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md) 中的「故障排除」章节。
+
+### 问题 6：Milvus 连接失败
+
+**解决方案**：
+
+1. 确保 Milvus 服务正在运行
+   ```bash
+   docker ps | grep milvus
+   ```
+
+2. 检查 Milvus 配置是否正确
+   - 主机地址是否正确（默认：localhost）
+   - 端口是否正确（默认：19530）
+   - 用户名和密码是否正确（如果启用了认证）
+
+3. 测试 Milvus 连接
+   - 在管理后台点击「测试连接」按钮
+   - 检查网络是否可达
+
+4. 查看 Milvus 日志
+   ```bash
+   docker logs milvus-standalone
+   ```
+
+### 问题 7：Milvus 向量搜索结果异常
+
+**解决方案**：
+
+1. **向量维度不匹配**：
+   - 确保 Milvus 配置中的向量维度与 Embedding 模型输出一致
+   - DashScope `text-embedding-v2`: 1024 维
+   - OpenAI `text-embedding-3-small`: 1536 维
+   - 如果维度不匹配，需要重新初始化集合并迁移数据
+
+2. **索引未创建**：
+   - 点击「初始化集合」按钮确保索引已创建
+   - 系统使用 IVF_FLAT 索引和余弦相似度度量
+
+3. **集合未加载**：
+   - Milvus 集合需要加载到内存才能搜索
+   - 初始化集合时会自动加载
+
+### 问题 8：数据迁移失败
+
+**解决方案**：
+
+1. **部分迁移失败**：
+   - 检查迁移状态中的错误数量
+   - 单个向量迁移失败不会影响其他向量
+   - 可重新执行迁移，已成功的向量会被更新
+
+2. **内存不足**：
+   - 迁移时会批量处理（每次 100 个向量）
+   - 如果数据量特别大，考虑分批迁移
+   - 使用「迁移单个文档」功能测试
+
+3. **向量数据损坏**：
+   - 关系型数据库中的 `embedding` 字段存储的是 JSON 格式
+   - 检查是否有无效的 JSON 数据
+   - 可重新解析文档修复向量化数据
+
+### 问题 9：SQL 文档分块异常
+
+**解决方案**：
+
+1. **RangeError: Invalid array length**：
+   - 这是由于正则表达式使用零宽度先行断言导致的
+   - 已修复：将 `(?=CREATE...)` 改为 `(CREATE...)`
+   - 确保使用最新版本的代码
+
+2. **分块过大或过小**：
+   - 在「RAG 配置」页面调整 SQL 文档的分块参数
+   - 推荐配置：chunkSize=4000, chunkOverlap=0, maxSingleChunkSize=8000
+
+3. **CREATE 语句识别不准确**：
+   - SQL 分块策略匹配以下模式：
+     - `CREATE TABLE`
+     - `CREATE OR REPLACE FUNCTION`
+     - `CREATE OR REPLACE PROCEDURE`
+     - `CREATE OR REPLACE TRIGGER`
+     - `CREATE OR REPLACE VIEW`
+   - 如果有特殊的 SQL 语法，可能需要调整正则表达式
+
 ## 部署注意事项
 
 1. **生产环境**：建议使用 PostgreSQL 数据库
@@ -620,11 +1567,12 @@ npx prisma migrate dev
 
 ### 📄 文档管理
 
-- 支持多种文件格式上传（PDF、DOCX、TXT）
+- 支持多种文件格式上传（PDF、DOCX、TXT、SQL）
 - 自动文本提取
 - 文档状态管理（草稿、已发布、已归档）
 - 文档内容和附件管理
 - 重新解析文档
+- SQL 文档专用分块策略
 
 ### 📚 知识库
 
@@ -638,6 +1586,7 @@ npx prisma migrate dev
 - 基于向量相似度的文档检索
 - 相关性评分
 - 多关键词支持
+- 支持知识库过滤
 
 ### 🤖 AI 对话
 
@@ -665,6 +1614,16 @@ npx prisma migrate dev
 - 文档管理
 - 知识库管理
 - AI 配置管理
+- Milvus 向量数据库配置
+- RAG 分块参数配置
+- 数据迁移工具
+
+### 🚀 向量数据库
+
+- **双后端架构**：支持关系型数据库和 Milvus
+- **Milvus 集成**：高性能向量存储和搜索
+- **数据迁移工具**：从关系型数据库迁移到 Milvus
+- **向后兼容**：可随时切换向量存储后端
 
 ## 技术亮点
 
@@ -677,6 +1636,9 @@ npx prisma migrate dev
 7. **RAG 检索**：文档向量化 + 相似度搜索
 8. **Text-to-SQL**：自然语言转数据库查询
 9. **加密存储**：敏感信息加密保护
+10. **Milvus 集成**：高性能向量数据库支持
+11. **双后端向量存储**：关系型数据库与 Milvus 无缝切换
+12. **RAG 配置分离**：普通文档与 SQL 文档独立配置分块参数
 
 ## 项目状态
 
@@ -687,6 +1649,9 @@ npx prisma migrate dev
 ✅ 多 AI 提供商支持  
 ✅ 用户角色权限系统  
 ✅ 安全测试通过  
+✅ **Milvus 向量数据库集成**  
+✅ **数据迁移工具**  
+✅ **RAG 配置分离（普通文档/SQL 文档）**  
 
 ## 快速使用指南
 
@@ -696,8 +1661,96 @@ npx prisma migrate dev
 4. **执行迁移**：`npx prisma migrate dev --name init`
 5. **启动服务器**：`npm run dev`
 6. **访问应用**：<http://localhost:3005>
-7. **登录系统**：使用任意邮箱和密码登录（会自动创建用户，角色为 VIEWER，状态为 PENDING）
-8. **升级权限**：如果需要管理员权限，可直接在数据库中将用户 role 改为 ADMIN，status 改为 ACTIVE
-9. **配置 AI**：进入管理后台 → 系统设置 → AI 配置，配置 Embedding 和 LLM
-10. **上传文档**：点击 "上传文档" 按钮，系统会自动处理并向量化
-11. **搜索对话**：使用搜索功能或 AI 对话功能
+7. **登录系统**：使用任意邮箱和密码登录（会自动创建用户）
+   - 第一个注册的用户会自动成为 **ADMIN（管理员）**，状态为 **ACTIVE（正常）**
+   - 后续注册的用户角色为 **VIEWER（查看者）**，状态为 **PENDING（待审核）**
+8. **查询用户列表**：使用 Prisma Studio 或直接查询数据库
+   - 方法一：启动 Prisma Studio：`npx prisma studio`，然后在浏览器中访问 <http://localhost:5555>，查看 User 表
+   - 方法二：使用 SQLite 命令行查询（如果使用 SQLite）：
+     ```bash
+     # 进入 prisma 目录
+     cd prisma
+     
+     # 使用 sqlite3 打开数据库
+     sqlite3 dev.db
+     
+     # 查询所有用户
+     SELECT id, email, name, role, status, "createdAt" FROM "User" WHERE "deletedAt" IS NULL;
+     
+     # 退出
+     .quit
+     ```
+   - 方法三：使用 PostgreSQL 命令行查询（如果使用 PostgreSQL）：
+     ```bash
+     # 连接到数据库
+     psql -h localhost -U postgres -d intelligent_knowledge_base
+     
+     # 查询所有用户
+     SELECT id, email, name, role, status, "createdAt" FROM "User" WHERE "deletedAt" IS NULL;
+     
+     # 退出
+     \q
+     ```
+9. **升级用户为管理员**：
+   - 方法一：使用 Prisma Studio 直接编辑 User 表
+   - 方法二：执行 SQL 更新：
+     ```sql
+     -- 将指定用户升级为管理员
+     UPDATE "User" SET role = 'ADMIN', status = 'ACTIVE' WHERE email = 'your-email@example.com';
+     ```
+   - 方法三：如果已有管理员账户，登录后进入「管理后台」→「用户管理」进行操作
+10. **配置 AI**：进入管理后台 → 系统设置 → AI 配置，配置 Embedding 和 LLM
+11. **配置数据库**：进入管理后台 → 系统设置 → 数据库配置，可切换数据库类型（需重启服务）
+12. **上传文档**：点击 "上传文档" 按钮，系统会自动处理并向量化
+13. **搜索对话**：使用搜索功能或 AI 对话功能
+
+## 用户管理说明
+
+### 用户自动创建机制
+
+系统支持自动创建用户：
+
+1. **首次登录**：在登录页面输入任意邮箱和密码，系统会自动创建用户
+2. **第一个用户**：会自动成为 **ADMIN（管理员）**，状态为 **ACTIVE（正常）**
+3. **后续用户**：角色为 **VIEWER（查看者）**，状态为 **PENDING（待审核）**，需要管理员激活
+
+### 用户角色说明
+
+| 角色 | 说明 | 权限 |
+|------|------|------|
+| **ADMIN** | 管理员 | 所有权限 + 用户管理 + 系统设置 |
+| **EDITOR** | 编辑者 | 上传文档、编辑文档、创建知识库 |
+| **VIEWER** | 查看者 | 查看文档、搜索文档 |
+
+### 用户状态说明
+
+| 状态 | 说明 |
+|------|------|
+| **PENDING** | 待审核 | 新注册用户，默认状态，需管理员审核 |
+| **ACTIVE** | 正常 | 已激活用户，可正常使用 |
+| **DISABLED** | 禁用 | 被禁用用户，无法登录 |
+
+### 常用用户查询 SQL
+
+```sql
+-- 查询所有活跃用户
+SELECT id, email, name, role, status, "createdAt" 
+FROM "User" 
+WHERE "deletedAt" IS NULL AND status = 'ACTIVE';
+
+-- 查询待审核用户
+SELECT id, email, name, role, status, "createdAt" 
+FROM "User" 
+WHERE "deletedAt" IS NULL AND status = 'PENDING';
+
+-- 查询所有管理员
+SELECT id, email, name, role, status 
+FROM "User" 
+WHERE "deletedAt" IS NULL AND role = 'ADMIN';
+
+-- 激活待审核用户
+UPDATE "User" SET status = 'ACTIVE' WHERE id = 'user-id';
+
+-- 升级为管理员
+UPDATE "User" SET role = 'ADMIN' WHERE email = 'admin@example.com';
+```

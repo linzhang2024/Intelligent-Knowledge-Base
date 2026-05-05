@@ -111,6 +111,9 @@ const navTabs = {
 const buttonBaseClass =
   "inline-flex items-center px-3 py-2 border rounded-md text-sm font-medium transition-colors duration-200";
 
+const smallButtonClass =
+  "inline-flex items-center px-2 py-1 border rounded text-xs font-medium transition-colors duration-200";
+
 const secondaryButtonClass =
   "border-gray-200 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-300";
 
@@ -141,20 +144,20 @@ export default function AppHeader({
 
   const renderActionButtons = () => {
     return (
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center space-x-2">
         <button
           onClick={pageActions?.onClear}
           disabled={pageActions?.isLoading}
-          className={`${buttonBaseClass} ${secondaryButtonClass} ${pageActions?.isLoading ? disabledButtonClass : ""}`}
+          className={`${smallButtonClass} ${secondaryButtonClass} ${pageActions?.isLoading ? disabledButtonClass : ""}`}
         >
-          <TrashIcon className="mr-2" />
+          <TrashIcon className="w-3.5 h-3.5 mr-1" />
           清空对话
         </button>
         <Link
           href="/documents/upload"
-          className={`${buttonBaseClass} ${primaryButtonClass}`}
+          className={`${smallButtonClass} ${primaryButtonClass}`}
         >
-          <UploadIcon className="mr-2" />
+          <UploadIcon className="w-3.5 h-3.5 mr-1" />
           上传文档
         </Link>
       </div>

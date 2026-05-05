@@ -9,6 +9,23 @@ const nextConfig = {
       },
     ];
   },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = config.externals || [];
+      
+      if (!Array.isArray(config.externals)) {
+        config.externals = [config.externals];
+      }
+      
+      config.externals.push(
+        '@zilliz/milvus2-sdk-node',
+        '@grpc/grpc-js',
+        '@grpc/proto-loader',
+      );
+    }
+    
+    return config;
+  },
 };
 
 export default nextConfig;

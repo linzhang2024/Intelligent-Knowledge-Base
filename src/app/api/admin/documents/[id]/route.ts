@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
+import { deleteEmbeddingsByDocumentId } from "@/lib/vectorStore";
 
 const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
@@ -255,6 +256,12 @@ export async function DELETE(
     const documentTitle = targetDocument.title;
 
     try {
+      console.log(`[文档删除] 开始删除文档 "${documentTitle}" (ID: ${documentId})`);
+      
+      console.log(`[文档删除] 正在清理 Milvus 向量数据...`);
+      await deleteEmbeddingsByDocumentId(documentId);
+      console.log(`[文档删除] Milvus 向量数据清理完成`);
+
       await prisma.$transaction(async (tx) => {
         const docInTransaction = await tx.document.findUnique({
           where: { id: documentId },

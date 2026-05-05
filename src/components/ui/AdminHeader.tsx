@@ -15,7 +15,13 @@ const navItems: NavItem[] = [
   { id: "users", label: "用户管理", href: "/admin/users" },
   { id: "documents", label: "文档管理", href: "/admin/documents" },
   { id: "knowledge-bases", label: "知识库管理", href: "/admin/knowledge-bases" },
-  { id: "settings", label: "系统设置", href: "/admin/settings" },
+  { id: "settings", label: "系统设置", href: "/admin/settings/general" },
+];
+
+const settingsSubNavItems: NavItem[] = [
+  { id: "database", label: "数据库配置", href: "/admin/settings/database" },
+  { id: "ai", label: "AI 配置", href: "/admin/settings/ai" },
+  { id: "general", label: "系统设置", href: "/admin/settings/general" },
 ];
 
 interface AdminHeaderProps {
@@ -43,8 +49,17 @@ export default function AdminHeader({
     if (href === "/admin") {
       return pathname === "/admin" || pathname === "/admin/";
     }
+    if (href === "/admin/settings/general") {
+      return pathname.startsWith("/admin/settings");
+    }
     return pathname.startsWith(href);
   };
+
+  const isSubNavActive = (href: string) => {
+    return pathname === href || pathname.startsWith(href + "/");
+  };
+
+  const isSettingsPage = pathname.startsWith("/admin/settings");
 
   return (
     <header className="bg-white shadow">
@@ -64,7 +79,7 @@ export default function AdminHeader({
         </div>
 
         {showNavMenu && (
-          <nav className="py-3">
+          <nav className="py-3 border-b border-gray-100">
             <div className="flex space-x-1 overflow-x-auto">
               {navItems.map((item) => {
                 const active = isActive(item.href);
@@ -73,6 +88,25 @@ export default function AdminHeader({
                     key={item.id}
                     href={item.href}
                     className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 whitespace-nowrap ${active ? "bg-indigo-50 text-indigo-700" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"}`}
+                  >
+                    {item.label}
+                  </a>
+                );
+              })}
+            </div>
+          </nav>
+        )}
+
+        {isSettingsPage && showNavMenu && (
+          <nav className="py-2 bg-gray-50">
+            <div className="flex space-x-1 overflow-x-auto">
+              {settingsSubNavItems.map((item) => {
+                const active = isSubNavActive(item.href);
+                return (
+                  <a
+                    key={item.id}
+                    href={item.href}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 whitespace-nowrap ${active ? "bg-white text-indigo-700 shadow-sm" : "text-gray-600 hover:text-gray-900 hover:bg-white"}`}
                   >
                     {item.label}
                   </a>

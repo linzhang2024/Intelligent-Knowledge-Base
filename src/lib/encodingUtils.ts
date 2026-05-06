@@ -82,7 +82,13 @@ export function decodeBuffer(
   let hadConversion = false;
   let invalidByteCount = 0;
 
-  if (CHINESE_ENCODINGS.has(encoding)) {
+  if (
+    CHINESE_ENCODINGS.has(encoding) || 
+    encoding === "utf-16le" || 
+    encoding === "utf-16be" ||
+    encoding === "iso-8859-1" ||
+    encoding === "windows-1252"
+  ) {
     try {
       text = iconv.decode(buffer, encoding);
       hadConversion = true;
@@ -91,18 +97,9 @@ export function decodeBuffer(
       text = buffer.toString("utf-8");
       invalidByteCount = countInvalidCharacters(text);
     }
-  } else if (encoding === "utf-16le" || encoding === "utf-16be") {
+  } else if (encoding === "ascii") {
     try {
-      text = iconv.decode(buffer, encoding);
-      hadConversion = true;
-      invalidByteCount = countInvalidCharacters(text);
-    } catch (error) {
-      text = buffer.toString("utf-8");
-      invalidByteCount = countInvalidCharacters(text);
-    }
-  } else if (encoding === "iso-8859-1" || encoding === "windows-1252") {
-    try {
-      text = iconv.decode(buffer, encoding);
+      text = iconv.decode(buffer, "ascii");
       hadConversion = true;
       invalidByteCount = countInvalidCharacters(text);
     } catch (error) {
@@ -110,8 +107,14 @@ export function decodeBuffer(
       invalidByteCount = countInvalidCharacters(text);
     }
   } else {
-    text = buffer.toString("utf-8");
-    invalidByteCount = countInvalidCharacters(text);
+    try {
+      text = iconv.decode(buffer, encoding);
+      hadConversion = true;
+      invalidByteCount = countInvalidCharacters(text);
+    } catch (error) {
+      text = buffer.toString("utf-8");
+      invalidByteCount = countInvalidCharacters(text);
+    }
   }
 
   return {

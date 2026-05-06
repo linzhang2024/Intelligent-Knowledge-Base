@@ -95,11 +95,12 @@ export default function GeneralSettingsPage() {
   async function fetchConfigs() {
     setLoading(true);
     try {
-      const [ragResponse, dbResponse, milvusResponse, migrateResponse] = await Promise.all([
+      const [ragResponse, dbResponse, milvusResponse, migrateResponse, storageResponse] = await Promise.all([
         fetch("/api/admin/rag-config"),
         fetch("/api/admin/database-config"),
         fetch("/api/admin/milvus-config"),
         fetch("/api/admin/milvus-migrate"),
+        fetch("/api/admin/storage-config"),
       ]);
 
       if (ragResponse.ok) {
@@ -124,6 +125,17 @@ export default function GeneralSettingsPage() {
       if (migrateResponse.ok) {
         const migrateData = await migrateResponse.json();
         setMigrationStatus(migrateData.migrationStatus);
+      }
+
+      if (storageResponse.ok) {
+        const storageData = await storageResponse.json();
+        const storageConfig = storageData.config;
+        if (storageConfig) {
+          setMaxFileSize(String(storageConfig.maxFileSizeMB || "10"));
+          setStorageQuota(String(storageConfig.storageQuotaGB || "100"));
+          setSessionTimeout(String(storageConfig.sessionTimeoutMinutes || "30"));
+          setForceMfa(storageConfig.forceMfa || false);
+        }
       }
     } catch (error) {
       console.error("获取配置失败:", error);
@@ -203,6 +215,24 @@ export default function GeneralSettingsPage() {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.message || "保存 Milvus 配置失败");
         }
+      }
+
+      const storageResponse = await fetch("/api/admin/storage-config", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          maxFileSizeMB: parseInt(maxFileSize, 10) || 10,
+          storageQuotaGB: parseInt(storageQuota, 10) || 100,
+          sessionTimeoutMinutes: parseInt(sessionTimeout, 10) || 30,
+          forceMfa: forceMfa,
+        }),
+      });
+
+      if (!storageResponse.ok) {
+        const errorData = await storageResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || "保存存储配置失败");
       }
 
       setSaveMessage({

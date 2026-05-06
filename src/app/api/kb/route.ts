@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const user = await requireAuth(request);
@@ -9,13 +11,18 @@ export async function GET(request: NextRequest) {
 
     const knowledgeBases = await prisma.knowledgeBase.findMany({
       where: {
-        ownerId: currentUserId,
+        OR: [
+          { ownerId: currentUserId },
+          { visibility: "PUBLIC" },
+        ],
       },
       orderBy: { createdAt: "desc" as const },
       select: {
         id: true,
         name: true,
         description: true,
+        visibility: true,
+        ownerId: true,
         createdAt: true,
         _count: {
           select: { documents: true },

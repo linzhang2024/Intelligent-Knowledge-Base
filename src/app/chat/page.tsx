@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppHeader from "@/components/ui/AppHeader";
@@ -36,14 +36,18 @@ interface SSEEvent {
   data: unknown;
 }
 
-export default function ChatPage() {
+interface ChatContentProps {
+  onKbSelected: (kbId: string) => void;
+  selectedKbId: string;
+}
+
+function ChatContent({ onKbSelected, selectedKbId }: ChatContentProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
-  const [selectedKbId, setSelectedKbId] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -72,7 +76,7 @@ export default function ChatPage() {
           if (kbFromUrl && !initialKbLoaded) {
             const validKb = kbs.find((kb: KnowledgeBase) => kb.id === kbFromUrl);
             if (validKb) {
-              setSelectedKbId(kbFromUrl);
+              onKbSelected(kbFromUrl);
               console.log(`[Chat] 自动选中知识库: ${validKb.name}`);
             }
             setInitialKbLoaded(true);
@@ -84,7 +88,7 @@ export default function ChatPage() {
     };
 
     fetchKnowledgeBases();
-  }, [searchParams, initialKbLoaded]);
+  }, [searchParams, initialKbLoaded, onKbSelected]);
 
   const generateMessageId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -280,7 +284,7 @@ export default function ChatPage() {
             </label>
             <select
               value={selectedKbId}
-              onChange={(e) => setSelectedKbId(e.target.value)}
+              onChange={(e) => onKbSelected(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
             >
               <option value="">全部知识库</option>
@@ -307,7 +311,7 @@ export default function ChatPage() {
           <div className="md:hidden bg-white border-b border-gray-200 p-3">
             <select
               value={selectedKbId}
-              onChange={(e) => setSelectedKbId(e.target.value)}
+              onChange={(e) => onKbSelected(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm"
             >
               <option value="">全部知识库</option>
@@ -485,5 +489,15 @@ export default function ChatPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  const [selectedKbId, setSelectedKbId] = useState<string>("");
+
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">加载中...</div>}>
+      <ChatContent onKbSelected={setSelectedKbId} selectedKbId={selectedKbId} />
+    </Suspense>
   );
 }

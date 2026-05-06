@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { getUploadProgress } from "@/lib/uploadProgress";
-import { getUploadSession } from "../init/route";
+import { getUploadSession } from "@/lib/uploadSession";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {

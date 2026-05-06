@@ -301,7 +301,7 @@ export class SQLGenerator {
 
   private buildJoinClauses(elements: SQLElements, tablesUsed: string[]): string[] {
     const joins: string[] = [];
-    const tableNames = elements.fromTables.map(t => t.name.toLowerCase());
+    const tableNames = elements.fromTables.map(t => t.tableName.toLowerCase());
 
     for (const tableName of tableNames) {
       const table = this.tables.get(tableName);
@@ -619,7 +619,7 @@ export class SQLGenerator {
     }
 
     for (const table of elements.fromTables) {
-      if (this.tables.has(table.name.toLowerCase())) {
+      if (this.tables.has(table.tableName.toLowerCase())) {
         confidence += 0.05;
       }
     }
@@ -648,7 +648,7 @@ export class SQLGenerator {
 
     if (!elements.orderBy.length && elements.fromTables.length > 0) {
       const orderedElements = { ...elements };
-      const firstTable = this.tables.get(elements.fromTables[0].name.toLowerCase());
+      const firstTable = this.tables.get(elements.fromTables[0].tableName.toLowerCase());
       if (firstTable) {
         const primaryKey = firstTable.columns.find(c => c.isPrimaryKey);
         if (primaryKey) {

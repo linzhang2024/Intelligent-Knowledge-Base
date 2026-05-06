@@ -12,6 +12,7 @@ interface AIConfigState {
     apiKey: string;
     baseUrl: string;
     model: string;
+    dimension?: number;
     hasApiKey: boolean;
   };
   llm: {
@@ -29,6 +30,7 @@ interface ProviderData {
   embeddingModels: Record<AIProvider, string[]>;
   llmModels: Record<AIProvider, string[]>;
   defaultBaseUrls: Record<AIProvider, string>;
+  embeddingModelDimensions: Record<string, number | number[]>;
 }
 
 const providerLabels: Record<AIProvider, string> = {
@@ -86,6 +88,7 @@ export default function AISettingsPage() {
           embeddingModels: data.embeddingModels,
           llmModels: data.llmModels,
           defaultBaseUrls: data.defaultBaseUrls,
+          embeddingModelDimensions: data.embeddingModelDimensions,
         });
       }
     } catch (error) {
@@ -113,6 +116,7 @@ export default function AISettingsPage() {
             apiKey: aiConfig.embedding.apiKey || undefined,
             baseUrl: aiConfig.embedding.baseUrl,
             model: aiConfig.embedding.model,
+            dimension: aiConfig.embedding.dimension,
           },
           llm: {
             provider: aiConfig.llm.provider,
@@ -196,6 +200,7 @@ export default function AISettingsPage() {
           apiKey: config.apiKey || (config.hasApiKey ? "use_saved" : ""),
           baseUrl: config.baseUrl,
           model: config.model,
+          dimension: type === "embedding" ? (config as any).dimension : undefined,
         }),
       });
 
@@ -225,7 +230,7 @@ export default function AISettingsPage() {
     }
   };
 
-  const updateEmbeddingConfig = (field: string, value: string) => {
+  const updateEmbeddingConfig = (field: string, value: string | number) => {
     if (!aiConfig) return;
 
     const newConfig = {
@@ -238,8 +243,26 @@ export default function AISettingsPage() {
 
     if (field === "provider" && providerData) {
       const provider = value as AIProvider;
-      newConfig.embedding.model = providerData.embeddingModels[provider][0];
+      const newModel = providerData.embeddingModels[provider][0];
+      newConfig.embedding.model = newModel;
       newConfig.embedding.baseUrl = providerData.defaultBaseUrls[provider];
+      
+      const dimensions = providerData.embeddingModelDimensions[newModel];
+      if (Array.isArray(dimensions)) {
+        newConfig.embedding.dimension = dimensions[0];
+      } else {
+        newConfig.embedding.dimension = dimensions;
+      }
+    }
+
+    if (field === "model" && providerData) {
+      const newModel = value as string;
+      const dimensions = providerData.embeddingModelDimensions[newModel];
+      if (Array.isArray(dimensions)) {
+        newConfig.embedding.dimension = dimensions[0];
+      } else {
+        newConfig.embedding.dimension = dimensions;
+      }
     }
 
     setAiConfig(newConfig);
@@ -443,6 +466,52 @@ export default function AISettingsPage() {
                       {providerData.defaultBaseUrls[aiConfig.embedding.provider]}
                     </p>
                   </div>
+
+                  {(() => {
+                    const currentModel = aiConfig.embedding.model;
+                    const dimensions = providerData.embeddingModelDimensions[currentModel];
+                    const isMultipleDimensions = Array.isArray(dimensions);
+                    
+                    if (!isMultipleDimensions) {
+                      return (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            向量维度
+                          </label>
+                          <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-md text-sm text-gray-600">
+                            {dimensions || 1024} 维 (此模型不支持自定义维度)
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const dimensionOptions = dimensions as number[];
+                    const currentDimension = aiConfig.embedding.dimension ?? dimensionOptions[0];
+
+                    return (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          向量维度
+                        </label>
+                        <select
+                          value={currentDimension}
+                          onChange={(e) =>
+                            updateEmbeddingConfig("dimension", parseInt(e.target.value, 10))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                          {dimensionOptions.map((dim) => (
+                            <option key={dim} value={dim}>
+                              {dim} 维
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          text-embedding-v4 支持多种维度，更高维度通常提供更好的检索效果但会增加存储成本
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   <div className="flex justify-end">
                     <button

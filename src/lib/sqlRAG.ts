@@ -10,7 +10,7 @@ import {
   buildSQLPromptContext,
 } from "./sqlContext";
 
-export { TableMetadata, ColumnMetadata, RelationMetadata };
+export type { TableMetadata, ColumnMetadata, RelationMetadata };
 
 export class EmptyKnowledgeBaseError extends Error {
   constructor(message: string = "知识库中没有可用的表结构") {

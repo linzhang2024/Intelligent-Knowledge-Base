@@ -45,10 +45,10 @@ export async function POST(request: NextRequest) {
 
     const tableMappings = tables.map(t => ({
       name: t.name,
-      comment: t.tableComment,
+      comment: t.tableComment ?? undefined,
       columns: t.columns.map(c => ({
         name: c.name,
-        comment: c.columnComment,
+        comment: c.columnComment ?? undefined,
       })),
     }));
 

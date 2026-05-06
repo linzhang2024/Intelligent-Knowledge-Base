@@ -4,9 +4,9 @@ import { PassThrough, Transform } from "stream";
 import * as iconv from "iconv-lite";
 import * as chardet from "chardet";
 import { ParsedTable, SQLParseResult, ParseError, SQLDialect } from "../sqlParser/types";
-import { EncodingType, CHINESE_ENCODINGS } from "@/lib/encodingUtils";
+import { EncodingType, CHINESE_ENCODINGS, removeBOM, normalizeNewlines } from "@/lib/encodingUtils";
 
-export { EncodingType };
+export type { EncodingType };
 
 const MULTI_LINE_COMMENT_REGEX = /\/\*[\s\S]*?\*\//g;
 const SINGLE_LINE_COMMENT_REGEX = /--.*$/gm;
@@ -98,12 +98,24 @@ export class SQLStreamParser {
       highWaterMark: chunkSize,
     });
 
-    if (CHINESE_ENCODINGS.has(encoding) || encoding === "utf-16le" || encoding === "utf-16be") {
+    if (
+      CHINESE_ENCODINGS.has(encoding) || 
+      encoding === "utf-16le" || 
+      encoding === "utf-16be" ||
+      encoding === "iso-8859-1" ||
+      encoding === "windows-1252"
+    ) {
       console.log(`[SQL流式解析] 使用编码转换: ${encoding} -> UTF-8`);
       const decodeStream = iconv.decodeStream(encoding);
       return rawStream.pipe(decodeStream);
     }
 
+    if (encoding === "ascii") {
+      console.log(`[SQL流式解析] 检测到ASCII编码，使用UTF-8模式读取`);
+      return rawStream.setEncoding("utf-8");
+    }
+
+    console.log(`[SQL流式解析] 使用默认UTF-8编码`);
     return rawStream.setEncoding("utf-8");
   }
 
@@ -156,6 +168,10 @@ export class SQLStreamParser {
 
   private processLine(line: string): void {
     let processedLine = line;
+
+    if (this.lineNumber === 1) {
+      processedLine = removeBOM(processedLine);
+    }
 
     if (this.inMultiLineComment) {
       const commentEndIndex = processedLine.indexOf("*/");

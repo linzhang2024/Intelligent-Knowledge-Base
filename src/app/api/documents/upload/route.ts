@@ -27,6 +27,18 @@ import {
   processSQLChunksWithErrorHandling,
 } from "@/lib/documentChunkProcessor";
 import { getRAGConfig } from "@/lib/ragConfig";
+import { getStorageConfig, getMaxFileSizeBytes } from "@/lib/storageConfig";
+import {
+  splitSQLFile,
+  deleteSplitFiles,
+  deleteSplitFile,
+  SplitFileInfo,
+  SplitResult,
+  MAX_CHUNK_SIZE,
+  needsSplitting,
+  readAndDecodeFile,
+  ensureSplitTmpDir,
+} from "@/lib/sqlFileSplitter";
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -37,7 +49,6 @@ const ALLOWED_TYPES = [
   "application/x-sql",
 ];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".sql"];
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
@@ -53,6 +64,8 @@ export async function POST(request: NextRequest) {
     const user = await requireAuth(request);
     const currentUserId = user.id;
     const embeddingConfigured = await isEmbeddingConfigured();
+    const storageConfig = await getStorageConfig();
+    const maxFileSizeBytes = getMaxFileSizeBytes(storageConfig.maxFileSizeMB);
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -74,9 +87,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > maxFileSizeBytes) {
       return NextResponse.json(
-        { message: `文件大小不能超过 100MB，当前文件大小为 ${formatFileSize(file.size)}` },
+        { message: `文件大小不能超过 ${storageConfig.maxFileSizeMB}MB，当前文件大小为 ${formatFileSize(file.size)}` },
         { status: 400 }
       );
     }
@@ -134,13 +147,49 @@ export async function POST(request: NextRequest) {
     let parseError: DocumentParseError | null = null;
     let textChunks: string[] = [];
     let docType: DocumentType | null = null;
+    let splitFiles: SplitFileInfo[] = [];
+    let needsCleanup = false;
+
+    const isSQLFile = fileExtension.toLowerCase() === ".sql" || docType === "sql";
 
     try {
       docType = getDocumentTypeFromExtension(fileExtension);
       console.log(`开始解析文档: ${file.name}, 类型: ${docType}`);
       
-      const parseResult = await parseDocument(filePath, docType);
-      extractedContent = parseResult.text;
+      if (isSQLFile) {
+        console.log(`[SQL处理] 检测到SQL文件，检查是否需要拆分...`);
+        
+        if (needsSplitting(file.size)) {
+          console.log(`[SQL处理] 文件大小 ${formatFileSize(file.size)} 超过阈值，开始拆分...`);
+          
+          const splitResult = await splitSQLFile(filePath);
+          
+          if (splitResult.success && splitResult.files.length > 0) {
+            splitFiles = splitResult.files;
+            needsCleanup = true;
+            console.log(`[SQL处理] 文件拆分完成，共 ${splitFiles.length} 个片段`);
+            
+            const allContents: string[] = [];
+            for (const splitFile of splitFiles) {
+              console.log(`[SQL处理] 处理片段: ${splitFile.fileName}`);
+              const parseResult = await parseDocument(splitFile.filePath, "sql");
+              allContents.push(parseResult.text);
+            }
+            extractedContent = allContents.join("\n\n");
+          } else {
+            console.log(`[SQL处理] 文件拆分失败或无需拆分，使用原始文件解析`);
+            const parseResult = await parseDocument(filePath, docType);
+            extractedContent = parseResult.text;
+          }
+        } else {
+          console.log(`[SQL处理] 文件大小 ${formatFileSize(file.size)} 未超过阈值，直接解析`);
+          const parseResult = await parseDocument(filePath, docType);
+          extractedContent = parseResult.text;
+        }
+      } else {
+        const parseResult = await parseDocument(filePath, docType);
+        extractedContent = parseResult.text;
+      }
       
       console.log(`文档解析成功，文本长度: ${extractedContent.length} 字符`);
     } catch (error) {
@@ -151,8 +200,6 @@ export async function POST(request: NextRequest) {
         throw error;
       }
     }
-
-    const isSQLFile = fileExtension.toLowerCase() === ".sql" || docType === "sql";
 
     let chunkProcessingResult: {
       storedCount: number;
@@ -257,17 +304,70 @@ export async function POST(request: NextRequest) {
       try {
         console.log(`[SQL导入] 检测到SQL文件，开始解析表结构: "${title}"`);
         
-        const dialect = detectSQLDialect(extractedContent);
-        console.log(`[SQL导入] 检测到的SQL方言: ${dialect}`);
-        
-        sqlImportResult = await importSQLFile(extractedContent, {
-          knowledgeBaseId: knowledgeBaseId || undefined,
-          documentId: document.id,
-          userId: currentUserId,
-          overwriteExisting: false,
-          inferRelations: true,
-          dialect: dialect,
-        });
+        let totalTablesImported = 0;
+        let totalColumnsImported = 0;
+        let totalRelationsImported = 0;
+        let allErrors: string[] = [];
+        let allWarnings: string[] = [];
+        let allTableNames: string[] = [];
+
+        if (splitFiles.length > 0) {
+          console.log(`[SQL导入] 逐个处理拆分后的 ${splitFiles.length} 个文件...`);
+          
+          for (let i = 0; i < splitFiles.length; i++) {
+            const splitFile = splitFiles[i];
+            console.log(`[SQL导入] 处理片段 ${i + 1}/${splitFiles.length}: ${splitFile.fileName}`);
+            
+            try {
+              const splitFileContent = (await parseDocument(splitFile.filePath, "sql")).text;
+              const dialect = detectSQLDialect(splitFileContent);
+              
+              const chunkResult = await importSQLFile(splitFileContent, {
+                knowledgeBaseId: knowledgeBaseId || undefined,
+                documentId: document.id,
+                userId: currentUserId,
+                overwriteExisting: false,
+                inferRelations: true,
+                dialect: dialect,
+              });
+              
+              totalTablesImported += chunkResult.tablesImported;
+              totalColumnsImported += chunkResult.columnsImported;
+              totalRelationsImported += chunkResult.relationsImported;
+              allErrors.push(...chunkResult.errors);
+              allWarnings.push(...chunkResult.warnings);
+              allTableNames.push(...chunkResult.tableNames);
+              
+              console.log(`[SQL导入] 片段 ${i + 1} 导入完成: 表=${chunkResult.tablesImported}, 字段=${chunkResult.columnsImported}`);
+            } catch (chunkError) {
+              const errorMsg = `片段 ${splitFile.fileName} 导入失败: ${chunkError instanceof Error ? chunkError.message : "未知错误"}`;
+              console.error(`[SQL导入] ${errorMsg}`);
+              allErrors.push(errorMsg);
+            }
+          }
+          
+          sqlImportResult = {
+            success: allErrors.length === 0,
+            tablesImported: totalTablesImported,
+            columnsImported: totalColumnsImported,
+            relationsImported: totalRelationsImported,
+            errors: allErrors,
+            warnings: allWarnings,
+            tableNames: allTableNames,
+          };
+        } else {
+          const dialect = detectSQLDialect(extractedContent);
+          console.log(`[SQL导入] 检测到的SQL方言: ${dialect}`);
+          
+          sqlImportResult = await importSQLFile(extractedContent, {
+            knowledgeBaseId: knowledgeBaseId || undefined,
+            documentId: document.id,
+            userId: currentUserId,
+            overwriteExisting: false,
+            inferRelations: true,
+            dialect: dialect,
+          });
+        }
 
         console.log(`[SQL导入] 导入完成: 表=${sqlImportResult.tablesImported}, 字段=${sqlImportResult.columnsImported}, 关系=${sqlImportResult.relationsImported}`);
         
@@ -399,6 +499,20 @@ export async function POST(request: NextRequest) {
       };
     }
 
+    if (needsCleanup && splitFiles.length > 0) {
+      try {
+        console.log(`[SQL清理] 开始删除临时拆分文件...`);
+        const cleanupResult = await deleteSplitFiles(splitFiles);
+        console.log(`[SQL清理] 临时文件清理完成: 删除=${cleanupResult.deleted}, 错误=${cleanupResult.errors.length}`);
+        
+        if (cleanupResult.errors.length > 0) {
+          console.warn(`[SQL清理] 部分临时文件删除失败:`, cleanupResult.errors);
+        }
+      } catch (cleanupError) {
+        console.error(`[SQL清理] 删除临时文件失败:`, cleanupError);
+      }
+    }
+
     return NextResponse.json(responseData, { status: 201 });
   } catch (error) {
     if (error instanceof DocumentParseError) {
@@ -428,6 +542,16 @@ export async function POST(request: NextRequest) {
     }
     
     console.error("文件上传失败:", error);
+    
+    if (needsCleanup && splitFiles.length > 0) {
+      try {
+        console.log(`[SQL清理] 发生错误，清理临时拆分文件...`);
+        await deleteSplitFiles(splitFiles);
+        console.log(`[SQL清理] 临时文件清理完成`);
+      } catch (cleanupError) {
+        console.error(`[SQL清理] 删除临时文件失败:`, cleanupError);
+      }
+    }
     
     const errorMessage = error instanceof Error ? error.message : "未知错误";
     

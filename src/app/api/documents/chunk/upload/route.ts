@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { writeFile, mkdirSync, existsSync } from "fs";
 import path from "path";
-import { getUploadSession, updateUploadSession } from "../init/route";
+import { getUploadSession, updateUploadSession } from "@/lib/uploadSession";
 
 export async function POST(request: NextRequest) {
   try {

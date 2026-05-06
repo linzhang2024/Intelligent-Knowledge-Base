@@ -6,6 +6,8 @@ import {
   RAGConfig,
 } from "@/lib/ragConfig";
 
+export const dynamic = "force-dynamic";
+
 function validateRAGConfig(config: Partial<RAGConfig>): { valid: boolean; message?: string } {
   if (config.chunkSize !== undefined && (config.chunkSize < 100 || config.chunkSize > 50000)) {
     return { valid: false, message: "普通文档分块大小必须在 100-50000 之间" };

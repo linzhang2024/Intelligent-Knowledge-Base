@@ -112,17 +112,25 @@ export async function POST(request: NextRequest) {
             let searchTime = 0;
             
             try {
+              const effectiveMinSimilarity = Math.max(minSimilarity || 0.38, 0.1);
               const searchStartTime = Date.now();
               searchResults = await semanticSearch(message, {
                 knowledgeBaseId: knowledgeBaseId || undefined,
                 limit: Math.min(limit, 10),
-                minSimilarity: Math.max(minSimilarity, 0.1),
+                minSimilarity: effectiveMinSimilarity,
                 userId: user.id,
               });
               searchTime = Date.now() - searchStartTime;
 
+              const topSimilarity = searchResults.length > 0
+                ? (Math.max(...searchResults.map(r => r.similarity)) * 100).toFixed(1)
+                : "0";
+              const resultDetails = searchResults.map((r, i) =>
+                `  #${i + 1}: ${(r.similarity * 100).toFixed(1)}% - ${r.documentTitle}\n    内容: ${r.content.substring(0, 100)}...`
+              ).join('\n');
+
               console.log(
-                `[RAG Chat] 语义检索完成，找到 ${searchResults.length} 个相关片段，耗时 ${searchTime}ms`
+                `[RAG Chat] 语义检索完成，找到 ${searchResults.length} 个相关片段，阈值 ${(effectiveMinSimilarity * 100).toFixed(0)}%，最高匹配 ${topSimilarity}%，耗时 ${searchTime}ms\n${resultDetails}`
               );
             } catch (searchError) {
               console.error("[RAG Chat] 语义检索失败:", searchError);
@@ -155,6 +163,8 @@ export async function POST(request: NextRequest) {
             );
 
             try {
+              console.log(`[RAG Chat] 开始流式 LLM，片段数: ${searchResults.length}`);
+
               const chatStream = await chatWithRAGStream(
                 message,
                 searchResults,
@@ -162,11 +172,15 @@ export async function POST(request: NextRequest) {
                 history
               );
 
+              let fullContent = "";
               for await (const chunk of chatStream) {
+                fullContent += chunk;
                 controller.enqueue(
                   createSSEEvent("content", { content: chunk })
                 );
               }
+
+              console.log(`[RAG Chat] 流式 LLM 返回内容: ${fullContent.substring(0, 200)}${fullContent.length > 200 ? '...' : ''}`);
 
               const totalTime = Date.now() - startTime;
               controller.enqueue(
@@ -205,17 +219,25 @@ export async function POST(request: NextRequest) {
       let searchTime = 0;
       
       try {
+        const effectiveMinSimilarity = Math.max(minSimilarity || 0.38, 0.1);
         const searchStartTime = Date.now();
         searchResults = await semanticSearch(message, {
           knowledgeBaseId: knowledgeBaseId || undefined,
           limit: Math.min(limit, 10),
-          minSimilarity: Math.max(minSimilarity, 0.1),
+          minSimilarity: effectiveMinSimilarity,
           userId: user.id,
         });
         searchTime = Date.now() - searchStartTime;
 
+        const topSimilarity = searchResults.length > 0
+          ? (Math.max(...searchResults.map(r => r.similarity)) * 100).toFixed(1)
+          : "0";
+        const resultDetails = searchResults.map((r, i) =>
+          `  #${i + 1}: ${(r.similarity * 100).toFixed(1)}% - ${r.documentTitle}\n    内容: ${r.content.substring(0, 100)}...`
+        ).join('\n');
+
         console.log(
-          `[RAG Chat] 语义检索完成，找到 ${searchResults.length} 个相关片段，耗时 ${searchTime}ms`
+          `[RAG Chat] 语义检索完成，找到 ${searchResults.length} 个相关片段，阈值 ${(effectiveMinSimilarity * 100).toFixed(0)}%，最高匹配 ${topSimilarity}%，耗时 ${searchTime}ms\n${resultDetails}`
         );
       } catch (searchError) {
         console.error("[RAG Chat] 语义检索失败:", searchError);
@@ -250,13 +272,17 @@ export async function POST(request: NextRequest) {
       }
 
       const sources = buildSources(searchResults);
-      
+
+      console.log(`[RAG Chat] 开始调用 LLM，片段数: ${searchResults.length}`);
+
       const answer = await chatWithRAG(
         message,
         searchResults,
         { streaming: false },
         history
       );
+
+      console.log(`[RAG Chat] LLM 返回内容: ${answer.substring(0, 200)}${answer.length > 200 ? '...' : ''}`);
 
       const totalTime = Date.now() - startTime;
 

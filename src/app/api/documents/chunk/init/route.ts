@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       fileSize,
       chunkSize: CHUNK_SIZE,
       totalChunks,
-      uploadedChunks: new Set<number>(),
+      uploadedChunks: [] as number[],
       createdAt: Date.now(),
       userId,
       fileExtension,

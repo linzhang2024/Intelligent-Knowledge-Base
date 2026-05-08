@@ -73,11 +73,12 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const newUploadedChunks = new Set(session.uploadedChunks);
-    newUploadedChunks.add(index);
+    const uploadedChunksSet = new Set(session.uploadedChunks);
+    uploadedChunksSet.add(index);
+    const newUploadedChunks = Array.from(uploadedChunksSet);
     updateUploadSession(uploadId, { uploadedChunks: newUploadedChunks });
 
-    const uploadedCount = newUploadedChunks.size;
+    const uploadedCount = newUploadedChunks.length;
     const progress = Math.round((uploadedCount / session.totalChunks) * 100);
 
     return NextResponse.json(

@@ -13,13 +13,13 @@ async function getCachedRAGConfig(): Promise<RAGConfig> {
   if (cachedRAGConfig && now - cachedConfigTime < CACHE_TTL) {
     return cachedRAGConfig;
   }
-  
+
   try {
     cachedRAGConfig = await getRAGConfig();
     cachedConfigTime = now;
     return cachedRAGConfig;
   } catch (error) {
-    console.warn("[RAG Config] 读取配置失败，使用默认值:", error);
+    console.warn("[RAG Config] 读取配置失败，使用默认值", error);
     return {
       chunkSize: DEFAULT_RAG_CONFIG.chunkSize,
       chunkOverlap: DEFAULT_RAG_CONFIG.chunkOverlap,
@@ -181,7 +181,7 @@ async function processChunksWithErrorHandlingInternal(
             storedCount++;
           } catch (error) {
             console.error(
-              `[RAG 存储] 片段 ${start + i} 存储失败，跳过:`,
+              `[RAG 存储] 片段 ${start + i} 存储失败，跳过`,
               error instanceof Error ? error.message : "未知错误"
             );
             skippedIndices.push(start + i);
@@ -190,10 +190,10 @@ async function processChunksWithErrorHandlingInternal(
       });
     } catch (error) {
       console.error(
-        `[RAG 存储] 批次 ${batchIndex + 1} 事务失败，逐个重试:`,
+        `[RAG 存储] 批次 ${batchIndex + 1} 事务失败，逐一重试`,
         error instanceof Error ? error.message : "未知错误"
       );
-      
+
       for (let i = 0; i < batchData.length; i++) {
         try {
           await prisma.documentChunk.create({
@@ -202,7 +202,7 @@ async function processChunksWithErrorHandlingInternal(
           storedCount++;
         } catch (error) {
           console.error(
-            `[RAG 存储] 片段 ${start + i} 存储失败，跳过:`,
+            `[RAG 存储] 片段 ${start + i} 存储失败，跳过`,
             error instanceof Error ? error.message : "未知错误"
           );
           skippedIndices.push(start + i);
@@ -217,7 +217,7 @@ async function processChunksWithErrorHandlingInternal(
         progress: currentProgress,
         processedItems: end,
         totalItems: processedChunks.length,
-        message: `正在将片段批量写入数据库 (${end}/${processedChunks.length})...`,
+        message: `正在将片段写入数据库 (${end}/${processedChunks.length})...`,
       });
     }
   }

@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       data: {
         userQuery: requirement,
         generatedSQL: generatedSQLs[0]?.sql || "",
-        tablesUsed: generatedSQLs[0]?.tablesUsed || [],
+        tablesUsed: JSON.stringify(generatedSQLs[0]?.tablesUsed || []),
         knowledgeBaseId: knowledgeBaseId || null,
         userId: user.id,
         createdAt: new Date(),

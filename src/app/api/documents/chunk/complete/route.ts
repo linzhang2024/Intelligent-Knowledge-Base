@@ -43,7 +43,7 @@ import {
   readFileSync,
 } from "fs";
 import path from "path";
-import { getUploadSession, deleteUploadSession } from "../init/route";
+import { getUploadSession, deleteUploadSession } from "@/lib/uploadSession";
 
 const DOCUMENT_STATUS = {
   DRAFT: "DRAFT",
@@ -110,8 +110,8 @@ async function mergeChunks(
     writeStream.write(chunkBuffer);
   }
 
-  return new Promise((resolve, reject) => {
-    writeStream.end((err) => {
+  return new Promise<void>((resolve, reject) => {
+    writeStream.end((err?: Error) => {
       if (err) reject(err);
       else resolve();
     });
@@ -163,13 +163,16 @@ async function extractTextFromFile(
 }
 
 export async function POST(request: NextRequest) {
+  let uploadId: string | null = null;
+  
   try {
     const user = await requireAuth(request);
     const currentUserId = user.id;
     const embeddingConfigured = await isEmbeddingConfigured();
 
     const body = await request.json();
-    const { uploadId, title, knowledgeBaseId } = body;
+    const { uploadId: bodyUploadId, title, knowledgeBaseId } = body;
+    uploadId = bodyUploadId;
 
     if (!uploadId) {
       return NextResponse.json(
@@ -270,7 +273,7 @@ export async function POST(request: NextRequest) {
           const linesProgress = Math.min(progress.linesProcessed / 1000, 1);
           const parsingProgress = 50 + linesProgress * 25;
           
-          updateUploadProgress(uploadId, {
+          updateUploadProgress(uploadId!, {
             stage: "parsing",
             progress: parsingProgress,
             message: `正在解析SQL: 行=${progress.linesProcessed}, 表=${progress.tablesFound}`,
@@ -310,7 +313,7 @@ export async function POST(request: NextRequest) {
       } else if (error instanceof Error) {
         parseError = new DocumentParseError(
           `解析失败: ${error.message}`,
-          docType || "document"
+          docType ?? undefined
         );
         console.log("文档解析失败:", error.message);
       } else {
@@ -637,12 +640,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "未知错误";
     
-    updateUploadProgress(uploadId, {
-      stage: "error",
-      progress: 0,
-      message: `上传失败: ${errorMessage}`,
-      error: errorMessage,
-    });
+    if (uploadId) {
+      updateUploadProgress(uploadId, {
+        stage: "error",
+        progress: 0,
+        message: `上传失败: ${errorMessage}`,
+        error: errorMessage,
+      });
+    }
 
     if (error instanceof DocumentParseError) {
       return NextResponse.json(

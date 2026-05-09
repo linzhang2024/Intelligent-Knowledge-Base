@@ -10,6 +10,9 @@ import {
   PROVIDER_BASE_URLS,
   AIProvider,
   AIConfig,
+  getAvailableDimensions,
+  supportsMultipleDimensions,
+  EMBEDDING_MODEL_DIMENSIONS,
 } from "@/lib/aiConfig";
 import { getEmbeddingsInstance } from "@/lib/embedding";
 import { getChatModelInstance } from "@/lib/llm";
@@ -165,6 +168,7 @@ export async function GET(request: NextRequest) {
         embeddingModels: EMBEDDING_MODELS,
         llmModels: LLM_MODELS,
         defaultBaseUrls: PROVIDER_BASE_URLS,
+        embeddingModelDimensions: EMBEDDING_MODEL_DIMENSIONS,
       },
       { status: 200 }
     );
@@ -212,6 +216,7 @@ export async function PUT(request: NextRequest) {
         apiKey: embedding.apiKey || "",
         baseUrl: embedding.baseUrl || PROVIDER_BASE_URLS[embedding.provider as AIProvider],
         model: embedding.model || EMBEDDING_MODELS[embedding.provider as AIProvider][0],
+        dimension: embedding.dimension,
       };
     }
 
@@ -270,7 +275,7 @@ export async function POST(request: NextRequest) {
     await requireAdmin(request);
 
     const body = await request.json();
-    const { type, provider, apiKey, baseUrl, model } = body;
+    const { type, provider, apiKey, baseUrl, model, dimension } = body;
 
     if (!type || (type !== "embedding" && type !== "llm")) {
       return NextResponse.json(
@@ -288,12 +293,14 @@ export async function POST(request: NextRequest) {
     let actualApiKey: string;
     let actualBaseUrl: string;
     let actualModel: string;
+    let actualDimension: number | undefined;
 
     if (useSavedConfig) {
       actualProvider = configToUse.provider;
       actualApiKey = configToUse.apiKey;
       actualBaseUrl = baseUrl || configToUse.baseUrl;
       actualModel = model || configToUse.model;
+      actualDimension = dimension ?? (configToUse as any).dimension;
 
       if (!actualApiKey || actualApiKey.trim() === "") {
         return NextResponse.json(
@@ -324,6 +331,7 @@ export async function POST(request: NextRequest) {
           ? EMBEDDING_MODELS[actualProvider][0]
           : LLM_MODELS[actualProvider][0]
       );
+      actualDimension = dimension;
     }
 
     let testResult: TestResult;
@@ -332,14 +340,15 @@ export async function POST(request: NextRequest) {
 
     try {
       console.log(`[AI Config Test] 开始测试 ${type === "embedding" ? "Embedding" : "LLM"} 连接`);
-      console.log(`[AI Config Test] 提供商: ${actualProvider}, 模型: ${actualModel}, Base URL: ${actualBaseUrl}`);
+      console.log(`[AI Config Test] 提供商: ${actualProvider}, 模型: ${actualModel}, Base URL: ${actualBaseUrl}, 维度: ${actualDimension}`);
 
       if (type === "embedding") {
         const embeddings = getEmbeddingsInstance(
           actualProvider,
           actualApiKey,
           actualBaseUrl,
-          actualModel
+          actualModel,
+          actualDimension
         );
 
         await embeddings.embedQuery("test");

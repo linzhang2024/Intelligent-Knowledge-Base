@@ -4,6 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import BackButton from "@/components/ui/BackButton";
+import {
+  SplitChunk,
+  SplitProgress,
+  splitSQLFile,
+  needsSplitting,
+  getFileSizeMB,
+  generateChunkName,
+  MAX_CHUNK_SIZE,
+} from "@/lib/sqlSplitter";
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -14,12 +23,17 @@ const ALLOWED_TYPES = [
   "application/x-sql",
 ];
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".sql"];
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const DEFAULT_MAX_FILE_SIZE_MB = 100;
 const CHUNK_SIZE = 5 * 1024 * 1024;
+
+function getMaxFileSizeBytes(maxFileSizeMB: number): number {
+  return maxFileSizeMB * 1024 * 1024;
+}
 
 type UploadStage =
   | "idle"
   | "initializing"
+  | "splitting"
   | "uploading"
   | "encoding"
   | "parsing"
@@ -63,6 +77,13 @@ interface ProgressResponse {
   updatedAt: number;
 }
 
+interface SplitFile {
+  index: number;
+  path: string;
+  name: string;
+  size: number;
+}
+
 interface FileUploadItem {
   id: string;
   file: File;
@@ -79,11 +100,20 @@ interface FileUploadItem {
   totalItems?: number;
   processedItems?: number;
   hasProgressError?: boolean;
+  isSQLFile?: boolean;
+  needsSplitting?: boolean;
+  userChoseSplit?: boolean;
+  isSplit?: boolean;
+  totalSplitChunks?: number;
+  processedSplitChunks?: number;
+  splitChunks?: SplitChunk[];
+  splitFiles?: SplitFile[];
 }
 
 const STAGE_LABELS: Record<UploadStage, string> = {
   idle: "等待上传",
   initializing: "初始化...",
+  splitting: "正在拆分大文件...",
   uploading: "正在上传...",
   encoding: "正在识别文件编码并转换为 UTF-8",
   parsing: "正在解析文档内容...",
@@ -244,33 +274,46 @@ export default function UploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [loadingKb, setLoadingKb] = useState(true);
+  const [maxFileSizeMB, setMaxFileSizeMB] = useState(DEFAULT_MAX_FILE_SIZE_MB);
   const router = useRouter();
 
   useEffect(() => {
-    const fetchKnowledgeBases = async () => {
+    const fetchConfigs = async () => {
       try {
-        const response = await fetch("/api/kb");
-        if (response.ok) {
-          const data = await response.json();
+        const [kbResponse, storageResponse] = await Promise.all([
+          fetch("/api/kb"),
+          fetch("/api/storage-config"),
+        ]);
+
+        if (kbResponse.ok) {
+          const data = await kbResponse.json();
           setKnowledgeBases(data.knowledgeBases || []);
         }
+
+        if (storageResponse.ok) {
+          const storageData = await storageResponse.json();
+          if (storageData.config && storageData.config.maxFileSizeMB) {
+            setMaxFileSizeMB(storageData.config.maxFileSizeMB);
+          }
+        }
       } catch (err) {
-        console.error("获取知识库列表失败:", err);
+        console.error("获取配置失败:", err);
       } finally {
         setLoadingKb(false);
       }
     };
 
-    fetchKnowledgeBases();
+    fetchConfigs();
   }, []);
 
   const validateFile = (
     file: File
   ): { valid: boolean; error?: string } => {
-    if (file.size > MAX_FILE_SIZE) {
+    const maxFileSizeBytes = getMaxFileSizeBytes(maxFileSizeMB);
+    if (file.size > maxFileSizeBytes) {
       return {
         valid: false,
-        error: `文件大小不能超过 100MB，当前文件大小为 ${formatFileSize(file.size)}`,
+        error: `文件大小不能超过 ${maxFileSizeMB}MB，当前文件大小为 ${formatFileSize(file.size)}`,
       };
     }
 
@@ -305,6 +348,10 @@ export default function UploadPage() {
           (existing) => existing.name === file.name
         );
         if (!isDuplicate) {
+          const fileExtension = "." + (file.name.split(".").pop()?.toLowerCase() || "");
+          const isSQLFile = fileExtension === ".sql";
+          const needsSplit = isSQLFile && file.size > 2 * 1024 * 1024;
+
           newFiles.push({
             id: generateId(),
             file,
@@ -312,6 +359,8 @@ export default function UploadPage() {
             size: file.size,
             status: "idle",
             progress: 0,
+            isSQLFile,
+            needsSplitting: needsSplit,
           });
         }
       } else {
@@ -330,6 +379,80 @@ export default function UploadPage() {
     e.target.value = "";
   };
 
+  const handleSplitFile = async (id: string) => {
+    const fileItem = files.find(f => f.id === id);
+    if (!fileItem || !fileItem.file) return;
+
+    try {
+      updateFile(id, {
+        status: "splitting",
+        progress: 0,
+        progressMessage: "正在上传原文件...",
+      });
+
+      const formData = new FormData();
+      formData.append("file", fileItem.file);
+
+      console.log(`[SQL拆分] 步骤1: 上传原文件到临时目录`);
+      const tempResponse = await fetch("/api/documents/temp-upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!tempResponse.ok) {
+        throw new Error("上传原文件失败");
+      }
+
+      const tempData = await tempResponse.json();
+      console.log(`[SQL拆分] 原文件上传成功: ${tempData.tempFilePath}`);
+
+      updateFile(id, {
+        progress: 30,
+        progressMessage: "正在拆分文件...",
+      });
+
+      console.log(`[SQL拆分] 步骤2: 调用拆分API`);
+      const splitResponse = await fetch("/api/documents/split", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tempFilePath: tempData.tempFilePath,
+          originalName: fileItem.name,
+        }),
+      });
+
+      if (!splitResponse.ok) {
+        throw new Error("拆分文件失败");
+      }
+
+      const splitData = await splitResponse.json();
+      console.log(`[SQL拆分] 拆分成功，共 ${splitData.totalChunks} 个文件，保存到 upload/split-tmp/`);
+      console.log(`[SQL拆分] 拆分文件列表:`, splitData.splitFiles);
+
+      updateFile(id, {
+        progress: 90,
+        progressMessage: `拆分完成，共 ${splitData.totalChunks} 个片段，准备上传`,
+        status: "idle",
+        userChoseSplit: true,
+        isSplit: true,
+        splitFiles: splitData.splitFiles,
+        totalSplitChunks: splitData.totalChunks,
+        processedSplitChunks: 0,
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "拆分失败";
+      console.error(`[SQL拆分] 发生错误:`, error);
+      updateFile(id, {
+        status: "error",
+        error: errorMessage,
+        progressMessage: errorMessage,
+      });
+    }
+  };
+
   const removeFile = (id: string) => {
     if (isUploading) return;
     setFiles((prev) => prev.filter((f) => f.id !== id));
@@ -345,11 +468,105 @@ export default function UploadPage() {
     return file.size > 10 * 1024 * 1024;
   };
 
+  const uploadSplitChunk = async (
+    originalFileId: string,
+    chunk: SplitChunk,
+    chunkIndex: number,
+    totalChunks: number,
+    knowledgeBaseId: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> => {
+    try {
+      const chunkFile = new File([chunk.blob], chunk.name, { type: "text/plain" });
+
+      updateFile(originalFileId, {
+        processedSplitChunks: chunkIndex,
+        progressMessage: `正在上传片段 ${chunkIndex + 1}/${totalChunks} (${chunk.name})`,
+        progress: 10 + ((chunkIndex / totalChunks) * 80),
+      });
+
+      const formData = new FormData();
+      formData.append("title", chunk.name.replace(/\.[^/.]+$/, ""));
+      formData.append("content", "");
+      formData.append("knowledgeBaseId", knowledgeBaseId);
+      formData.append("file", chunkFile);
+
+      const response = await fetch("/api/documents/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, data };
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        return { success: false, error: errorData.message || `上传失败 (${response.status})` };
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "上传失败" };
+    }
+  };
+
   const uploadSingleFileChunked = async (fileItem: FileUploadItem) => {
-    const { id, file } = fileItem;
+    const { id, file, isSQLFile, needsSplitting: needsSplit, userChoseSplit, isSplit, splitFiles } = fileItem;
     const useChunked = shouldUseChunkedUpload(file);
 
     try {
+      if (isSQLFile && userChoseSplit && isSplit && splitFiles && splitFiles.length > 0) {
+        console.log(
+          `[SQL拆分上传] 用户已选择拆分，开始上传 ${splitFiles.length} 个片段到后端处理`
+        );
+
+        const totalSplitChunks = splitFiles.length;
+
+        updateFile(id, {
+          status: "uploading",
+          progress: 10,
+          progressMessage: `正在处理 ${totalSplitChunks} 个片段...`,
+        });
+
+        console.log(`[SQL 拆分上传] 调用 upload-split API`);
+        const response = await fetch("/api/documents/upload-split", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            splitFiles,
+            knowledgeBaseId,
+            originalFileName: file.name,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "上传拆分文件失败");
+        }
+
+        const result = await response.json();
+        console.log(`[SQL拆分上传] 上传结果:`, result);
+
+        updateFile(id, {
+          progress: 100,
+          status: result.success ? "success" : "error",
+          progressMessage: result.success
+            ? `所有 ${totalSplitChunks} 个片段上传成功！`
+            : `部分片段上传失败`,
+          result: {
+            success: result.success,
+            chunkCount: result.totalChunks,
+          },
+        });
+
+        return;
+      }
+
+      if (isSQLFile && needsSplit && !userChoseSplit) {
+        console.log(
+          `[SQL上传] 文件较大 (${formatFileSize(file.size)})，使用普通上传`
+        );
+      }
+
       if (useChunked) {
         console.log(
           `[分块上传] 文件较大 (${formatFileSize(file.size)})，使用分块上传`
@@ -700,6 +917,26 @@ export default function UploadPage() {
       return fileItem.progressMessage;
     }
 
+    if (fileItem.isSQLFile && fileItem.needsSplitting) {
+      if (fileItem.status === "splitting") {
+        if (fileItem.progressMessage) {
+          return fileItem.progressMessage;
+        }
+        return `正在拆分大SQL文件 (${Math.round(fileItem.progress)}%)`;
+      }
+
+      if (
+        fileItem.status === "uploading" &&
+        fileItem.totalSplitChunks !== undefined &&
+        fileItem.processedSplitChunks !== undefined
+      ) {
+        if (fileItem.progressMessage) {
+          return fileItem.progressMessage;
+        }
+        return `正在上传片段 (${fileItem.processedSplitChunks + 1}/${fileItem.totalSplitChunks})`;
+      }
+    }
+
     if (fileItem.status === "storing") {
       if (fileItem.processedItems !== undefined && fileItem.totalItems !== undefined && fileItem.totalItems > 0) {
         const percentage = Math.round((fileItem.processedItems / fileItem.totalItems) * 100);
@@ -858,7 +1095,7 @@ export default function UploadPage() {
                   点击选择文件或拖拽文件到此处
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  支持 PDF, DOCX, TXT, SQL 格式，单文件最大 100MB，可选择多个文件。
+                  支持 PDF, DOCX, TXT, SQL 格式，单文件最大 {maxFileSizeMB}MB，可选择多个文件。
                   超过 10MB 的文件将自动使用分块上传。
                 </p>
               </label>
@@ -891,7 +1128,17 @@ export default function UploadPage() {
                           </p>
                           <p className="text-xs text-gray-500">
                             {formatFileSize(fileItem.size)}
-                            {fileItem.size > 10 * 1024 * 1024 && (
+                            {fileItem.isSQLFile && fileItem.needsSplitting && fileItem.isSplit && (
+                              <span className="ml-2 text-indigo-600">
+                                (已拆分，共 {fileItem.totalSplitChunks} 个片段)
+                              </span>
+                            )}
+                            {fileItem.isSQLFile && fileItem.needsSplitting && !fileItem.isSplit && (
+                              <span className="ml-2 text-amber-600">
+                                (文件较大，建议拆分)
+                              </span>
+                            )}
+                            {!fileItem.isSQLFile && fileItem.size > 10 * 1024 * 1024 && (
                               <span className="ml-2 text-indigo-600">
                                 (分块上传)
                               </span>
@@ -931,6 +1178,15 @@ export default function UploadPage() {
                               </span>
                             )}
                         </span>
+                        {fileItem.isSQLFile && fileItem.needsSplitting && fileItem.status === "idle" && !fileItem.isSplit && !isUploading && (
+                          <button
+                            type="button"
+                            onClick={() => handleSplitFile(fileItem.id)}
+                            className="mr-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md transition-colors"
+                          >
+                            拆分文件
+                          </button>
+                        )}
                         {fileItem.status === "idle" && !isUploading && (
                           <button
                             type="button"
@@ -1036,7 +1292,7 @@ export default function UploadPage() {
                 </li>
                 <li>
                   • <strong>大文件支持</strong>: 超过 10MB
-                  的文件将自动使用分块上传，支持最大 100MB
+                  的文件将自动使用分块上传，支持最大 {maxFileSizeMB}MB
                 </li>
               </ul>
             </div>

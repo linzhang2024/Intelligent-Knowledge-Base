@@ -98,6 +98,8 @@ function buildErrorResponse(
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  let totalTablesCount = 0;
+  
   try {
     const user = await requireAuth(request);
 
@@ -135,7 +137,7 @@ export async function POST(request: NextRequest) {
     }
 
     const tableWhereClause = knowledgeBaseId ? { knowledgeBaseId } : {};
-    const totalTablesCount = await prisma.databaseTable.count({
+    totalTablesCount = await prisma.databaseTable.count({
       where: tableWhereClause,
     });
 

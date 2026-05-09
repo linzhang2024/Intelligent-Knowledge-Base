@@ -15,7 +15,18 @@ export const EMBEDDING_MODELS: Record<AIProvider, string[]> = {
   [AI_PROVIDERS.DASHSCOPE]: ["text-embedding-v4", "text-embedding-v3", "text-embedding-v2", "text-embedding-v1"],
 };
 
-export const EMBEDDING_MODEL_DIMENSIONS: Record<string, number> = {
+export const EMBEDDING_MODEL_DIMENSIONS: Record<string, number | number[]> = {
+  "text-embedding-v1": 1024,
+  "text-embedding-v2": 1536,
+  "text-embedding-v3": [1024, 768, 512, 256, 128, 64],
+  "text-embedding-v4": [2048, 1536, 1024, 768, 512, 256, 128, 64],
+  "text-embedding-3-small": 1536,
+  "text-embedding-3-large": 3072,
+  "text-embedding-ada-002": 1536,
+  "deepseek-embedding": 1024,
+};
+
+export const EMBEDDING_MODEL_DEFAULT_DIMENSIONS: Record<string, number> = {
   "text-embedding-v1": 1024,
   "text-embedding-v2": 1536,
   "text-embedding-v3": 1024,
@@ -26,8 +37,28 @@ export const EMBEDDING_MODEL_DIMENSIONS: Record<string, number> = {
   "deepseek-embedding": 1024,
 };
 
-export function getEmbeddingModelDimensions(model: string): number {
-  return EMBEDDING_MODEL_DIMENSIONS[model] || 1024;
+export function getEmbeddingModelDimensions(model: string, explicitDimension?: number): number {
+  if (explicitDimension) {
+    const availableDimensions = EMBEDDING_MODEL_DIMENSIONS[model];
+    if (Array.isArray(availableDimensions)) {
+      if (availableDimensions.includes(explicitDimension)) {
+        return explicitDimension;
+      }
+    }
+  }
+  return EMBEDDING_MODEL_DEFAULT_DIMENSIONS[model] || 1024;
+}
+
+export function getAvailableDimensions(model: string): number[] {
+  const dimensions = EMBEDDING_MODEL_DIMENSIONS[model];
+  if (Array.isArray(dimensions)) {
+    return dimensions;
+  }
+  return [dimensions || 1024];
+}
+
+export function supportsMultipleDimensions(model: string): boolean {
+  return Array.isArray(EMBEDDING_MODEL_DIMENSIONS[model]);
 }
 
 export const LLM_MODELS: Record<AIProvider, string[]> = {
@@ -47,6 +78,7 @@ export const CONFIG_KEYS = {
   EMBEDDING_API_KEY: "embedding.apiKey",
   EMBEDDING_BASE_URL: "embedding.baseUrl",
   EMBEDDING_MODEL: "embedding.model",
+  EMBEDDING_DIMENSION: "embedding.dimension",
   LLM_PROVIDER: "llm.provider",
   LLM_API_KEY: "llm.apiKey",
   LLM_BASE_URL: "llm.baseUrl",
@@ -64,6 +96,7 @@ export interface AIConfig {
     apiKey: string;
     baseUrl: string;
     model: string;
+    dimension?: number;
   };
   llm: {
     provider: AIProvider;
@@ -79,6 +112,7 @@ export interface PublicAIConfig {
     provider: AIProvider;
     baseUrl: string;
     model: string;
+    dimension?: number;
     hasApiKey: boolean;
   };
   llm: {
@@ -92,13 +126,18 @@ export interface PublicAIConfig {
 
 function getEnvConfig(): Partial<AIConfig> {
   const dashscopeApiKey = process.env.DASHSCOPE_API_KEY || "";
+  const embeddingModel = process.env.EMBEDDING_MODEL || "text-embedding-v2";
+  const envDimension = process.env.EMBEDDING_DIMENSION 
+    ? parseInt(process.env.EMBEDDING_DIMENSION, 10) 
+    : undefined;
 
   return {
     embedding: {
       provider: AI_PROVIDERS.DASHSCOPE,
       apiKey: dashscopeApiKey,
       baseUrl: PROVIDER_BASE_URLS.DASHSCOPE,
-      model: process.env.EMBEDDING_MODEL || "text-embedding-v2",
+      model: embeddingModel,
+      dimension: envDimension,
     },
     llm: {
       provider: AI_PROVIDERS.DASHSCOPE,
@@ -144,6 +183,12 @@ export async function getAIConfig(): Promise<AIConfig> {
   const embeddingProvider = (dbConfig.get(CONFIG_KEYS.EMBEDDING_PROVIDER) as AIProvider) ||
     envConfig.embedding?.provider || AI_PROVIDERS.DASHSCOPE;
 
+  const embeddingModel = dbConfig.get(CONFIG_KEYS.EMBEDDING_MODEL) ||
+    envConfig.embedding?.model || EMBEDDING_MODELS[embeddingProvider][0];
+
+  const dbDimensionStr = dbConfig.get(CONFIG_KEYS.EMBEDDING_DIMENSION);
+  const dbDimension = dbDimensionStr ? parseInt(dbDimensionStr, 10) : undefined;
+
   const llmProvider = (dbConfig.get(CONFIG_KEYS.LLM_PROVIDER) as AIProvider) ||
     envConfig.llm?.provider || AI_PROVIDERS.DASHSCOPE;
 
@@ -153,8 +198,8 @@ export async function getAIConfig(): Promise<AIConfig> {
       apiKey: dbConfig.get(CONFIG_KEYS.EMBEDDING_API_KEY) || envConfig.embedding?.apiKey || "",
       baseUrl: dbConfig.get(CONFIG_KEYS.EMBEDDING_BASE_URL) ||
         envConfig.embedding?.baseUrl || PROVIDER_BASE_URLS[embeddingProvider],
-      model: dbConfig.get(CONFIG_KEYS.EMBEDDING_MODEL) ||
-        envConfig.embedding?.model || EMBEDDING_MODELS[embeddingProvider][0],
+      model: embeddingModel,
+      dimension: dbDimension ?? envConfig.embedding?.dimension,
     },
     llm: {
       provider: llmProvider,
@@ -177,6 +222,7 @@ export async function getPublicAIConfig(): Promise<PublicAIConfig> {
       provider: config.embedding.provider,
       baseUrl: config.embedding.baseUrl,
       model: config.embedding.model,
+      dimension: config.embedding.dimension,
       hasApiKey: !!config.embedding.apiKey,
     },
     llm: {
@@ -219,6 +265,13 @@ export async function saveAIConfig(config: Partial<AIConfig>): Promise<void> {
         configKey: CONFIG_KEYS.EMBEDDING_MODEL,
         configValue: config.embedding.model,
         description: "Embedding 模型名称",
+      });
+    }
+    if (config.embedding.dimension !== undefined) {
+      updates.push({
+        configKey: CONFIG_KEYS.EMBEDDING_DIMENSION,
+        configValue: String(config.embedding.dimension),
+        description: "Embedding 向量维度",
       });
     }
   }

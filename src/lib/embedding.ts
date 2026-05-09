@@ -1,6 +1,5 @@
-import { AlibabaTongyiEmbeddings } from "@langchain/community/embeddings/alibaba_tongyi";
 import { OpenAIEmbeddings } from "@langchain/openai";
-import { getAIConfig, AI_PROVIDERS, AIProvider } from "@/lib/aiConfig";
+import { getAIConfig, AI_PROVIDERS, AIProvider, getEmbeddingModelDimensions } from "@/lib/aiConfig";
 
 export interface EmbeddingResult {
   vectors: number[][];
@@ -8,23 +7,32 @@ export interface EmbeddingResult {
   dimensions: number;
 }
 
-function getEmbeddingsInstance(provider: AIProvider, apiKey: string, baseUrl: string, model: string) {
+function getEmbeddingsInstance(
+  provider: AIProvider, 
+  apiKey: string, 
+  baseUrl: string, 
+  model: string,
+  dimension?: number
+) {
+  const actualDimension = dimension ? getEmbeddingModelDimensions(model, dimension) : undefined;
+  
   switch (provider) {
     case AI_PROVIDERS.OPENAI:
     case AI_PROVIDERS.DEEPSEEK:
-      return new OpenAIEmbeddings({
+    case AI_PROVIDERS.DASHSCOPE:
+      const options: ConstructorParameters<typeof OpenAIEmbeddings>[0] = {
         model,
         apiKey,
         configuration: {
           baseURL: baseUrl,
         },
-      });
-
-    case AI_PROVIDERS.DASHSCOPE:
-      return new AlibabaTongyiEmbeddings({
-        modelName: model as any,
-        apiKey,
-      } as any);
+      };
+      
+      if (actualDimension) {
+        (options as any).dimensions = actualDimension;
+      }
+      
+      return new OpenAIEmbeddings(options);
 
     default:
       throw new Error(`不支持的 Embedding 提供商: ${provider}`);
@@ -47,7 +55,8 @@ async function getEmbeddings() {
     config.embedding.provider,
     config.embedding.apiKey,
     config.embedding.baseUrl,
-    config.embedding.model
+    config.embedding.model,
+    config.embedding.dimension
   );
 }
 

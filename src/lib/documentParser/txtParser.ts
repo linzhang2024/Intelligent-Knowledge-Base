@@ -6,6 +6,7 @@ import {
   Parser,
   ParserContext,
 } from "./types";
+import { decodeFileWithRetry, cleanText } from "@/lib/encodingUtils";
 
 function logInfo(context: ParserContext, message: string): void {
   console.log(`[${context.parserType.toUpperCase()}解析器] [${context.filePath}] ${message}`);
@@ -32,7 +33,11 @@ export const txtParser: Parser = {
     try {
       logInfo(context, "开始解析 TXT 文件");
 
-      const content = await readFile(filePath, "utf-8");
+      const decodeResult = await decodeFileWithRetry(filePath);
+      
+      logInfo(context, `文件编码检测: ${decodeResult.originalEncoding}, 转码: ${decodeResult.hadConversion ? "是" : "否"}, 非法字符: ${decodeResult.invalidByteCount}`);
+      
+      const content = cleanText(decodeResult.text);
 
       logInfo(context, `TXT 解析完成，文本长度: ${content.length}`);
 

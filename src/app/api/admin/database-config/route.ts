@@ -217,6 +217,8 @@ function escapeRegex(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin(request);
@@ -276,12 +278,14 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { type, host, port, user, password, database, sqlitePath, serviceName, sid } = body;
 
-    if (!type || !Object.values(DB_TYPES).includes(type)) {
+    if (!type || !Object.values(DB_TYPES).includes(type as DBType)) {
       return NextResponse.json(
         { message: `无效的数据库类型: ${type}` },
         { status: 400 }
       );
     }
+
+    const dbType = type as DBType;
 
     let config: DatabaseConfig;
 
@@ -329,10 +333,10 @@ export async function PUT(request: NextRequest) {
     let envContent = await readEnvFile();
     envContent = updateEnvVariable(envContent, "DATABASE_URL", config.databaseUrl);
 
-    if (type !== DB_TYPES.SQLITE) {
+    if (dbType !== DB_TYPES.SQLITE) {
       envContent = updateEnvVariable(envContent, "DB_HOST", config.host || "localhost");
-      envContent = updateEnvVariable(envContent, "DB_PORT", config.port || DEFAULT_PORTS[type]);
-      envContent = updateEnvVariable(envContent, "DB_USER", config.user || DEFAULT_USERS[type]);
+      envContent = updateEnvVariable(envContent, "DB_PORT", config.port || DEFAULT_PORTS[dbType]);
+      envContent = updateEnvVariable(envContent, "DB_USER", config.user || DEFAULT_USERS[dbType]);
       if (config.password) {
         envContent = updateEnvVariable(envContent, "DB_PASSWORD", config.password);
       }

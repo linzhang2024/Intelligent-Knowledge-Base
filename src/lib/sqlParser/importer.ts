@@ -162,21 +162,41 @@ export class SQLImporter {
       }
 
       for (const column of table.columns) {
-        await prisma.tableColumn.create({
-          data: {
-            tableId: databaseTable.id,
-            name: column.name,
-            dataType: column.dataType,
-            columnType: column.columnType,
-            isNullable: column.isNullable,
-            isPrimaryKey: column.isPrimaryKey,
-            isAutoIncrement: column.isAutoIncrement,
-            defaultValue: column.defaultValue,
-            columnComment: column.comment,
-            ordinalPosition: column.ordinalPosition,
-          },
-        });
-        columnsImported++;
+        try {
+          await prisma.tableColumn.upsert({
+            where: {
+              tableId_name: {
+                tableId: databaseTable.id,
+                name: column.name,
+              },
+            },
+            create: {
+              tableId: databaseTable.id,
+              name: column.name,
+              dataType: column.dataType,
+              columnType: column.columnType,
+              isNullable: column.isNullable,
+              isPrimaryKey: column.isPrimaryKey,
+              isAutoIncrement: column.isAutoIncrement,
+              defaultValue: column.defaultValue,
+              columnComment: column.comment,
+              ordinalPosition: column.ordinalPosition,
+            },
+            update: {
+              dataType: column.dataType,
+              columnType: column.columnType,
+              isNullable: column.isNullable,
+              isPrimaryKey: column.isPrimaryKey,
+              isAutoIncrement: column.isAutoIncrement,
+              defaultValue: column.defaultValue,
+              columnComment: column.comment,
+              ordinalPosition: column.ordinalPosition,
+            },
+          });
+          columnsImported++;
+        } catch (columnError) {
+          console.warn(`[SQL导入] 列 ${column.name} 导入失败:`, columnError instanceof Error ? columnError.message : "未知错误");
+        }
       }
 
       for (const fk of table.foreignKeys) {
@@ -188,19 +208,37 @@ export class SQLImporter {
         });
 
         if (toTable) {
-          await prisma.tableRelation.create({
-            data: {
-              fromTableId: databaseTable.id,
-              fromColumnName: fk.columnName,
-              toTableId: toTable.id,
-              toColumnName: fk.referencedColumnName,
-              relationType: "MANY_TO_ONE",
-              constraintName: fk.constraintName,
-              joinCondition: `${databaseTable.name}.${fk.columnName} = ${toTable.name}.${fk.referencedColumnName}`,
-              knowledgeBaseId: options.knowledgeBaseId || null,
-            },
-          });
-          relationsImported++;
+          try {
+            await prisma.tableRelation.upsert({
+              where: {
+                fromTableId_fromColumnName: {
+                  fromTableId: databaseTable.id,
+                  fromColumnName: fk.columnName,
+                },
+              },
+              create: {
+                fromTableId: databaseTable.id,
+                fromColumnName: fk.columnName,
+                toTableId: toTable.id,
+                toColumnName: fk.referencedColumnName,
+                relationType: "MANY_TO_ONE",
+                constraintName: fk.constraintName,
+                joinCondition: `${databaseTable.name}.${fk.columnName} = ${toTable.name}.${fk.referencedColumnName}`,
+                knowledgeBaseId: options.knowledgeBaseId || null,
+              },
+              update: {
+                toTableId: toTable.id,
+                toColumnName: fk.referencedColumnName,
+                relationType: "MANY_TO_ONE",
+                constraintName: fk.constraintName,
+                joinCondition: `${databaseTable.name}.${fk.columnName} = ${toTable.name}.${fk.referencedColumnName}`,
+                knowledgeBaseId: options.knowledgeBaseId || null,
+              },
+            });
+            relationsImported++;
+          } catch (relationError) {
+            console.warn(`[SQL导入] 关系 ${databaseTable.name}.${fk.columnName} -> ${toTable.name}.${fk.referencedColumnName} 导入失败:`, relationError instanceof Error ? relationError.message : "未知错误");
+          }
         } else {
           console.warn(`引用的表 ${fk.referencedTableName} 不存在，跳过外键关系`);
         }
@@ -269,17 +307,15 @@ export class SQLImporter {
               });
 
               if (existingDbTable && existingDbRefTable) {
-                const existingRelation = await prisma.tableRelation.findFirst({
-                  where: {
-                    fromTableId: existingDbTable.id,
-                    fromColumnName: column.name,
-                    toTableId: existingDbRefTable.id,
-                  },
-                });
-
-                if (!existingRelation) {
-                  await prisma.tableRelation.create({
-                    data: {
+                try {
+                  await prisma.tableRelation.upsert({
+                    where: {
+                      fromTableId_fromColumnName: {
+                        fromTableId: existingDbTable.id,
+                        fromColumnName: column.name,
+                      },
+                    },
+                    create: {
                       fromTableId: existingDbTable.id,
                       fromColumnName: column.name,
                       toTableId: existingDbRefTable.id,
@@ -289,8 +325,18 @@ export class SQLImporter {
                       joinCondition: `${table.name}.${column.name} = ${referencedTable.name}.${targetColumnName}`,
                       knowledgeBaseId: options.knowledgeBaseId || null,
                     },
+                    update: {
+                      toTableId: existingDbRefTable.id,
+                      toColumnName: targetColumnName,
+                      relationType: "MANY_TO_ONE",
+                      constraintName: `fk_${table.name}_${column.name}`,
+                      joinCondition: `${table.name}.${column.name} = ${referencedTable.name}.${targetColumnName}`,
+                      knowledgeBaseId: options.knowledgeBaseId || null,
+                    },
                   });
                   inferredCount++;
+                } catch (inferredError) {
+                  console.warn(`[SQL导入] 推断关系 ${table.name}.${column.name} -> ${referencedTable.name}.${targetColumnName} 导入失败:`, inferredError instanceof Error ? inferredError.message : "未知错误");
                 }
               }
             }

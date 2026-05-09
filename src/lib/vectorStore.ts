@@ -53,7 +53,7 @@ async function withTimeout<T>(
   errorMessage: string
 ): Promise<T> {
   let timeoutId: NodeJS.Timeout;
-  
+
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       reject(new EmbeddingTimeoutError(errorMessage));
@@ -282,31 +282,31 @@ export async function semanticSearch(
 
   let queryVector: number[];
   try {
-    console.log(`[VectorSearch] 开始向量化查询: "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}"`);
-    
+    console.log(`[VectorSearch] 开始向量化查询："${query.substring(0, 50)}${query.length > 50 ? '...' : ''}"`);
+
     const queryEmbeddingResult = await withTimeout(
       embedQuery(query),
       30000,
-      "Embedding 服务响应超时（30秒）"
+      "Embedding 服务响应超时（30 秒）"
     );
-    
+
     queryVector = queryEmbeddingResult.vectors[0];
-    
+
     if (!queryVector || queryVector.length === 0) {
       throw new Error("Embedding 服务返回空向量");
     }
-    
-    console.log(`[VectorSearch] 查询向量化完成，维度: ${queryVector.length}`);
+
+    console.log(`[VectorSearch] 查询向量化完成，维度：${queryVector.length}`);
   } catch (error) {
     if (error instanceof EmbeddingTimeoutError) {
       throw error;
     }
     console.error("[VectorSearch] 查询向量化失败:", error);
-    throw new Error(`向量化失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    throw new Error(`向量化失败：${error instanceof Error ? error.message : '未知错误'}`);
   }
 
   const useMilvus = await isMilvusEnabled();
-  console.log(`[VectorSearch] 使用存储后端: ${useMilvus ? "Milvus" : "Database"}`);
+  console.log(`[VectorSearch] 使用存储后端：${useMilvus ? "Milvus" : "Database"}`);
 
   if (useMilvus) {
     return semanticSearchMilvus(queryVector, {
@@ -364,6 +364,25 @@ export async function updateChunkEmbedding(
   model: string,
   metadata?: ChunkMetadata
 ): Promise<void> {
+  const existingChunk = await prisma.documentChunk.findUnique({
+    where: { id: chunkId },
+    select: { embedding: true, embeddingModel: true },
+  });
+
+  if (existingChunk?.embedding && existingChunk.embeddingModel === model) {
+    const useMilvus = await isMilvusEnabled();
+    if (useMilvus) {
+      const existsInMilvus = await checkMilvusVectorExistsInMilvus(chunkId, existingChunk.embedding);
+      if (existsInMilvus) {
+        console.log(`[VectorStore] skip embedding: chunkId=${chunkId}, 已存在相同模型的向量且 Milvus 中存在`);
+        return;
+      }
+    } else {
+      console.log(`[VectorStore] skip embedding: chunkId=${chunkId}, 已存在相同模型的向量`);
+      return;
+    }
+  }
+
   await prisma.documentChunk.update({
     where: { id: chunkId },
     data: {
@@ -374,10 +393,23 @@ export async function updateChunkEmbedding(
   });
 
   const useMilvus = await isMilvusEnabled();
-  
+
   if (useMilvus && metadata) {
-    console.log(`[VectorStore] 更新 Milvus 向量: ${chunkId}`);
-    
+    const existsInMilvus = await checkMilvusVectorExistsInMilvus(chunkId, serializeVector(vector));
+
+    if (existsInMilvus) {
+      console.log(`[VectorStore] skip milvus insert: chunkId=${chunkId}, Milvus 中已存在`);
+      await prisma.documentChunk.update({
+        where: { id: chunkId },
+        data: {
+          vectorStatus: "VECTOR_INSERTED",
+        },
+      });
+      return;
+    }
+
+    console.log(`[VectorStore] 更新 Milvus 向量：${chunkId}`);
+
     const result = await insertMilvusVectors([
       {
         id: chunkId,
@@ -391,16 +423,75 @@ export async function updateChunkEmbedding(
     ]);
 
     if (!result.success) {
-      console.error(`[VectorStore] Milvus 向量插入失败: ${result.message}`);
+      console.error(`[VectorStore] Milvus 向量插入失败：${result.message}`);
+    } else {
+      await prisma.documentChunk.update({
+        where: { id: chunkId },
+        data: {
+          vectorStatus: "VECTOR_INSERTED",
+        },
+      });
+      console.log(`[VectorStore] vectorStatus 更新为 VECTOR_INSERTED: ${chunkId}`);
     }
+  } else {
+    await prisma.documentChunk.update({
+      where: { id: chunkId },
+      data: {
+        vectorStatus: "EMBEDDING_DONE",
+      },
+    });
+  }
+}
+
+async function checkMilvusVectorExistsInMilvus(
+  chunkId: string,
+  embeddingJson: string
+): Promise<boolean> {
+  try {
+    const useMilvus = await isMilvusEnabled();
+    if (!useMilvus) {
+      return false;
+    }
+
+    const vector = JSON.parse(embeddingJson);
+    const results = await searchMilvusVectors(vector, {
+      limit: 1,
+      minSimilarity: 0.9999,
+    });
+
+    const exists = results.some(r => r.chunkId === chunkId);
+    console.log(`[Milvus检查] chunkId=${chunkId}, exists=${exists}`);
+
+    return exists;
+  } catch (error) {
+    console.error(`[Milvus检查] 检查失败:`, error);
+    return false;
+  }
+}
+
+async function checkMilvusVectorExists(chunkId: string): Promise<boolean> {
+  try {
+    const chunk = await prisma.documentChunk.findUnique({
+      where: { id: chunkId },
+      select: { embedding: true },
+    });
+
+    if (!chunk?.embedding) {
+      return false;
+    }
+
+    return await checkMilvusVectorExistsInMilvus(chunkId, chunk.embedding);
+  } catch (error) {
+    console.error(`[VectorStore] 检查 Milvus 向量存在性失败:`, error);
+    return false;
   }
 }
 
 export async function deleteEmbeddingsByDocumentId(documentId: string): Promise<void> {
   const useMilvus = await isMilvusEnabled();
-  
+
   if (useMilvus) {
-    console.log(`[VectorStore] 删除 Milvus 向量，文档ID: ${documentId}`);
+    console.log(`[VectorStore] 删除 Milvus 向量，文档 ID: ${documentId}`);
     await deleteMilvusVectorsByDocumentId(documentId);
   }
 }
@@ -431,7 +522,7 @@ export async function getEmbeddingStats(userId?: string): Promise<{
   const totalChunks = await prisma.documentChunk.count({ where: whereClause });
 
   let embeddedChunks: number;
-  
+
   if (useMilvus) {
     const milvusStats = await getMilvusStats();
     embeddedChunks = milvusStats.totalVectors;
@@ -450,8 +541,6 @@ export async function getEmbeddingStats(userId?: string): Promise<{
     totalChunks,
     embeddedChunks,
     pendingChunks: totalChunks - embeddedChunks,
-    backend: useMilvus ? "milvus" : "database",
+    backend: useMilvus ? "Milvus" : "Database",
   };
 }
-
-export { isMilvusEnabled };

@@ -1,18 +1,21 @@
 # dependencies
-/node_modules
-/.pnp
+node_modules
+.pnp
 .pnp.js
 .yarn/install-state.gz
 
 # testing
-/coverage
+coverage
 
 # next.js
-/.next/
-/out/
+.next/
+out/
+
+# 备份
+backup/
 
 # production
-/build
+build
 
 # misc
 .DS_Store
@@ -26,6 +29,7 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.env.example
 
 # vercel
 .vercel
@@ -36,3 +40,10 @@ next-env.d.ts
 
 # uploaded files
 /uploads
+prisma/dev.db
+upload
+
+# volumes
+volumes
+upload/split-tmp/tables_2026-05-08T03-19-17_1.sql
+upload/split-tmp/tables_2026-05-08T03-19-17_2.sql

@@ -144,11 +144,14 @@ export async function POST(request: NextRequest) {
     if (action === "delete") {
       const currentUserId = request.cookies.get("kb_user_id")?.value;
       
+      const validUserIds = currentUserId 
+        ? userIds.filter(id => id !== currentUserId)
+        : userIds;
+      
       const result = await prisma.user.updateMany({
         where: {
-          id: { in: userIds },
+          id: { in: validUserIds },
           deletedAt: null,
-          id: { not: currentUserId },
         },
         data: {
           deletedAt: new Date(),

@@ -9,6 +9,7 @@ export type EncodingType =
   | "utf-8" 
   | "gbk" 
   | "gb2312" 
+  | "gb18030"
   | "big5" 
   | "utf-16le" 
   | "utf-16be" 
@@ -29,12 +30,12 @@ export interface DecodeResult {
   invalidByteCount: number;
 }
 
-export const CHINESE_ENCODINGS: Set<string> = new Set(["gbk", "gb2312", "big5"]);
+export const CHINESE_ENCODINGS: Set<string> = new Set(["gbk", "gb2312", "gb18030", "big5"]);
 
 export function detectEncoding(buffer: Buffer): EncodingDetectionResult {
   const detected = chardet.detect(buffer);
   
-  if (!detected) {
+  if (!detected || !detected.encoding) {
     return {
       encoding: "utf-8",
       confidence: 0,
@@ -43,12 +44,15 @@ export function detectEncoding(buffer: Buffer): EncodingDetectionResult {
   }
 
   let encoding: EncodingType;
-  const detectedLower = detected.toLowerCase();
+  const detectedLower = detected.encoding.toLowerCase();
+  const confidence = detected.confidence || 0.5;
 
-  if (detectedLower === "gbk" || detectedLower === "cp936") {
+  if (detectedLower === "gbk" || detectedLower === "cp936" || detectedLower === "windows-1252") {
     encoding = "gbk";
   } else if (detectedLower === "gb2312") {
     encoding = "gb2312";
+  } else if (detectedLower === "gb18030") {
+    encoding = "gb18030";
   } else if (detectedLower === "big5" || detectedLower === "cp950") {
     encoding = "big5";
   } else if (detectedLower === "utf-8" || detectedLower === "utf8") {
@@ -69,7 +73,7 @@ export function detectEncoding(buffer: Buffer): EncodingDetectionResult {
 
   return {
     encoding,
-    confidence: 0.8,
+    confidence,
     isChineseEncoding: CHINESE_ENCODINGS.has(encoding),
   };
 }
@@ -82,34 +86,11 @@ export function decodeBuffer(
   let hadConversion = false;
   let invalidByteCount = 0;
 
-  if (CHINESE_ENCODINGS.has(encoding)) {
-    try {
-      text = iconv.decode(buffer, encoding);
-      hadConversion = true;
-      invalidByteCount = countInvalidCharacters(text);
-    } catch (error) {
-      text = buffer.toString("utf-8");
-      invalidByteCount = countInvalidCharacters(text);
-    }
-  } else if (encoding === "utf-16le" || encoding === "utf-16be") {
-    try {
-      text = iconv.decode(buffer, encoding);
-      hadConversion = true;
-      invalidByteCount = countInvalidCharacters(text);
-    } catch (error) {
-      text = buffer.toString("utf-8");
-      invalidByteCount = countInvalidCharacters(text);
-    }
-  } else if (encoding === "iso-8859-1" || encoding === "windows-1252") {
-    try {
-      text = iconv.decode(buffer, encoding);
-      hadConversion = true;
-      invalidByteCount = countInvalidCharacters(text);
-    } catch (error) {
-      text = buffer.toString("utf-8");
-      invalidByteCount = countInvalidCharacters(text);
-    }
-  } else {
+  try {
+    text = iconv.decode(buffer, encoding);
+    hadConversion = true;
+    invalidByteCount = countInvalidCharacters(text);
+  } catch (error) {
     text = buffer.toString("utf-8");
     invalidByteCount = countInvalidCharacters(text);
   }
@@ -137,6 +118,28 @@ export function hasHighInvalidByteRate(result: DecodeResult, threshold: number =
   if (result.text.length === 0) return false;
   const ratio = result.invalidByteCount / result.text.length;
   return ratio > threshold;
+}
+
+export function tryMultipleEncodings(buffer: Buffer): DecodeResult {
+  const results: DecodeResult[] = [];
+  
+  const encodingsToTry: EncodingType[] = ["utf-8", "gbk", "gb2312", "gb18030", "big5", "ascii"];
+  
+  for (const encoding of encodingsToTry) {
+    const result = decodeBuffer(buffer, encoding);
+    result.confidence = 1 - (result.invalidByteCount / Math.max(buffer.length, 1));
+    results.push(result);
+  }
+  
+  const validResults = results.filter(r => r.invalidByteCount < buffer.length * 0.05);
+  
+  if (validResults.length === 0) {
+    return results[0];
+  }
+  
+  validResults.sort((a, b) => b.confidence - a.confidence);
+  
+  return validResults[0];
 }
 
 export async function decodeFileWithRetry(

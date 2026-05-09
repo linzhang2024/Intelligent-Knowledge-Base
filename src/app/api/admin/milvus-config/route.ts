@@ -17,6 +17,8 @@ import {
   EMBEDDING_MODEL_DIMENSIONS,
 } from "@/lib/aiConfig";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     await requireAdmin(request);
@@ -27,7 +29,10 @@ export async function GET(request: NextRequest) {
       getAIConfig(),
     ]);
 
-    const recommendedDimensions = getEmbeddingModelDimensions(aiConfig.embedding.model);
+    const recommendedDimensions = getEmbeddingModelDimensions(
+      aiConfig.embedding.model, 
+      aiConfig.embedding.dimension
+    );
     const dimensionsMatch = config.dimensions === recommendedDimensions;
 
     return NextResponse.json(

@@ -8,51 +8,24 @@ import {
   initUploadProgress, 
   getUploadProgress, 
   updateUploadProgress, 
-  deleteUploadProgress,
   setUploadProgressStage 
 } from "@/lib/uploadProgress";
+import { 
+  createUploadSession, 
+  getUploadSession, 
+  updateUploadSession, 
+  deleteUploadSession 
+} from "@/lib/uploadSession";
+import { getStorageConfig, getMaxFileSizeBytes } from "@/lib/storageConfig";
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const CHUNK_SIZE = 5 * 1024 * 1024;
-
-const uploadSessions = new Map<
-  string,
-  {
-    uploadId: string;
-    fileName: string;
-    fileSize: number;
-    chunkSize: number;
-    totalChunks: number;
-    uploadedChunks: Set<number>;
-    createdAt: number;
-    userId: string;
-    fileExtension: string;
-  }
->();
-
-export function getUploadSession(uploadId: string) {
-  return uploadSessions.get(uploadId);
-}
-
-export function updateUploadSession(
-  uploadId: string,
-  updates: Partial<{ uploadedChunks: Set<number> }>
-) {
-  const session = uploadSessions.get(uploadId);
-  if (session && updates.uploadedChunks) {
-    session.uploadedChunks = updates.uploadedChunks;
-  }
-}
-
-export function deleteUploadSession(uploadId: string) {
-  uploadSessions.delete(uploadId);
-  deleteUploadProgress(uploadId);
-}
 
 export async function POST(request: NextRequest) {
   try {
     const user = await requireAuth(request);
     const userId = user.id;
+    const storageConfig = await getStorageConfig();
+    const maxFileSizeBytes = getMaxFileSizeBytes(storageConfig.maxFileSizeMB);
 
     const body = await request.json();
     const { fileName, fileSize, fileType } = body;
@@ -71,9 +44,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (fileSize > MAX_FILE_SIZE) {
+    if (fileSize > maxFileSizeBytes) {
       return NextResponse.json(
-        { message: `文件大小不能超过 100MB，当前文件大小为 ${(fileSize / 1024 / 1024).toFixed(2)}MB` },
+        { message: `文件大小不能超过 ${storageConfig.maxFileSizeMB}MB，当前文件大小为 ${(fileSize / 1024 / 1024).toFixed(2)}MB` },
         { status: 400 }
       );
     }
@@ -104,20 +77,15 @@ export async function POST(request: NextRequest) {
       fileSize,
       chunkSize: CHUNK_SIZE,
       totalChunks,
-      uploadedChunks: new Set<number>(),
+      uploadedChunks: [] as number[],
       createdAt: Date.now(),
       userId,
       fileExtension,
     };
 
-    uploadSessions.set(uploadId, session);
+    createUploadSession(session);
     initUploadProgress(uploadId);
     setUploadProgressStage(uploadId, "initializing");
-
-    setTimeout(() => {
-      uploadSessions.delete(uploadId);
-      deleteUploadProgress(uploadId);
-    }, 24 * 60 * 60 * 1000);
 
     return NextResponse.json(
       {

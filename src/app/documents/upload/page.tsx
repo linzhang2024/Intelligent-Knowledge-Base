@@ -77,6 +77,13 @@ interface ProgressResponse {
   updatedAt: number;
 }
 
+interface SplitFile {
+  index: number;
+  path: string;
+  name: string;
+  size: number;
+}
+
 interface FileUploadItem {
   id: string;
   file: File;
@@ -100,6 +107,7 @@ interface FileUploadItem {
   totalSplitChunks?: number;
   processedSplitChunks?: number;
   splitChunks?: SplitChunk[];
+  splitFiles?: SplitFile[];
 }
 
 const STAGE_LABELS: Record<UploadStage, string> = {
@@ -379,38 +387,64 @@ export default function UploadPage() {
       updateFile(id, {
         status: "splitting",
         progress: 0,
-        progressMessage: "正在分析 SQL 文件并准备拆分...",
+        progressMessage: "正在上传原文件...",
       });
 
-      const splitChunks = await splitSQLFile(fileItem.file, 200 * 1024, (progress) => {
-        const stageMessages: Record<SplitProgress["stage"], string> = {
-          reading: "正在读取 SQL 文件...",
-          splitting: `正在拆分 SQL 文件 (已创建 ${progress.chunksCreated} 个片段)...`,
-          complete: `拆分完成，共 ${progress.chunksCreated} 个片段`,
-        };
+      const formData = new FormData();
+      formData.append("file", fileItem.file);
 
-        updateFile(id, {
-          progress: progress.progress * 0.1,
-          progressMessage: stageMessages[progress.stage],
-        });
+      console.log(`[SQL拆分] 步骤1: 上传原文件到临时目录`);
+      const tempResponse = await fetch("/api/documents/temp-upload", {
+        method: "POST",
+        body: formData,
       });
 
-      const totalSplitChunks = splitChunks.length;
+      if (!tempResponse.ok) {
+        throw new Error("上传原文件失败");
+      }
 
-      console.log(`[SQL拆分] 拆分为 ${totalSplitChunks} 个片段`);
+      const tempData = await tempResponse.json();
+      console.log(`[SQL拆分] 原文件上传成功: ${tempData.tempFilePath}`);
 
       updateFile(id, {
-        splitChunks,
-        totalSplitChunks,
-        processedSplitChunks: 0,
-        progress: 10,
-        progressMessage: `拆分完成，共 ${totalSplitChunks} 个片段，准备上传`,
+        progress: 30,
+        progressMessage: "正在拆分文件...",
+      });
+
+      console.log(`[SQL拆分] 步骤2: 调用拆分API`);
+      const splitResponse = await fetch("/api/documents/split", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tempFilePath: tempData.tempFilePath,
+          originalName: fileItem.name,
+        }),
+      });
+
+      if (!splitResponse.ok) {
+        throw new Error("拆分文件失败");
+      }
+
+      const splitData = await splitResponse.json();
+      console.log(`[SQL拆分] 拆分成功，共 ${splitData.totalChunks} 个文件，保存到 upload/split-tmp/`);
+      console.log(`[SQL拆分] 拆分文件列表:`, splitData.splitFiles);
+
+      updateFile(id, {
+        progress: 90,
+        progressMessage: `拆分完成，共 ${splitData.totalChunks} 个片段，准备上传`,
         status: "idle",
         userChoseSplit: true,
         isSplit: true,
+        splitFiles: splitData.splitFiles,
+        totalSplitChunks: splitData.totalChunks,
+        processedSplitChunks: 0,
       });
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "拆分失败";
+      console.error(`[SQL拆分] 发生错误:`, error);
       updateFile(id, {
         status: "error",
         error: errorMessage,
@@ -474,52 +508,53 @@ export default function UploadPage() {
   };
 
   const uploadSingleFileChunked = async (fileItem: FileUploadItem) => {
-    const { id, file, isSQLFile, needsSplitting: needsSplit, userChoseSplit, isSplit, splitChunks } = fileItem;
+    const { id, file, isSQLFile, needsSplitting: needsSplit, userChoseSplit, isSplit, splitFiles } = fileItem;
     const useChunked = shouldUseChunkedUpload(file);
 
     try {
-      if (isSQLFile && userChoseSplit && isSplit && splitChunks) {
+      if (isSQLFile && userChoseSplit && isSplit && splitFiles && splitFiles.length > 0) {
         console.log(
-          `[SQL拆分上传] 用户已选择拆分，开始上传 ${splitChunks.length} 个片段`
+          `[SQL拆分上传] 用户已选择拆分，开始上传 ${splitFiles.length} 个片段到后端处理`
         );
 
-        const totalSplitChunks = splitChunks.length;
+        const totalSplitChunks = splitFiles.length;
 
         updateFile(id, {
           status: "uploading",
           progress: 10,
-          progressMessage: `开始上传 ${totalSplitChunks} 个片段...`,
+          progressMessage: `正在处理 ${totalSplitChunks} 个片段...`,
         });
 
-        let allSuccess = true;
-        const results: any[] = [];
+        console.log(`[SQL 拆分上传] 调用 upload-split API`);
+        const response = await fetch("/api/documents/upload-split", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            splitFiles,
+            knowledgeBaseId,
+            originalFileName: file.name,
+          }),
+        });
 
-        for (let i = 0; i < totalSplitChunks; i++) {
-          const result = await uploadSplitChunk(
-            id,
-            splitChunks[i],
-            i,
-            totalSplitChunks,
-            knowledgeBaseId
-          );
-
-          if (result.success && result.data) {
-            results.push(result.data);
-          } else {
-            allSuccess = false;
-            console.error(`[SQL拆分上传] 片段 ${i + 1} 上传失败:`, result.error);
-          }
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "上传拆分文件失败");
         }
+
+        const result = await response.json();
+        console.log(`[SQL拆分上传] 上传结果:`, result);
 
         updateFile(id, {
           progress: 100,
-          status: allSuccess ? "success" : "error",
-          progressMessage: allSuccess
+          status: result.success ? "success" : "error",
+          progressMessage: result.success
             ? `所有 ${totalSplitChunks} 个片段上传成功！`
             : `部分片段上传失败`,
           result: {
-            success: allSuccess,
-            chunkCount: totalSplitChunks,
+            success: result.success,
+            chunkCount: result.totalChunks,
           },
         });
 

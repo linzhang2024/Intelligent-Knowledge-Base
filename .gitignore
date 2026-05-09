@@ -29,6 +29,7 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+.env.example
 
 # vercel
 .vercel
@@ -40,6 +41,9 @@ next-env.d.ts
 # uploaded files
 /uploads
 prisma/dev.db
+upload
 
 # volumes
 volumes
+upload/split-tmp/tables_2026-05-08T03-19-17_1.sql
+upload/split-tmp/tables_2026-05-08T03-19-17_2.sql

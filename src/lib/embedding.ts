@@ -70,17 +70,42 @@ export async function embedDocuments(texts: string[]): Promise<EmbeddingResult> 
   const embeddings = await getEmbeddings();
   const model = config.embedding.model;
 
-  console.log(`[Embedding] 开始向量化 ${texts.length} 个文本片段，模型: ${model}, 提供商: ${config.embedding.provider}`);
+  console.log(`[Embedding] 开始向量化 ${texts.length} 个文本片段，模型：${model}, 提供商：${config.embedding.provider}`);
 
-  const vectors = await embeddings.embedDocuments(texts);
+  const maxRetries = 3;
+  let lastError: Error | null = null;
 
-  console.log(`[Embedding] 向量化完成，每个向量维度: ${vectors[0]?.length || 0}`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        const waitTime = Math.pow(2, attempt - 1) * 1000;
+        console.log(`[Embedding] 第 ${attempt} 次重试，等待 ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
 
-  return {
-    vectors,
-    model,
-    dimensions: vectors[0]?.length || 0,
-  };
+      const vectors = await embeddings.embedDocuments(texts);
+
+      console.log(`[Embedding] 向量化完成，每个向量维度：${vectors[0]?.length || 0}`);
+
+      return {
+        vectors,
+        model,
+        dimensions: vectors[0]?.length || 0,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(
+        `[Embedding] 第 ${attempt} 次尝试失败:`,
+        lastError.message
+      );
+
+      if (attempt < maxRetries) {
+        continue;
+      }
+    }
+  }
+
+  throw new Error(`向量化失败，已重试 ${maxRetries} 次：${lastError?.message || '未知错误'}`);
 }
 
 export async function embedQuery(text: string): Promise<EmbeddingResult> {
@@ -93,17 +118,42 @@ export async function embedQuery(text: string): Promise<EmbeddingResult> {
   const embeddings = await getEmbeddings();
   const model = config.embedding.model;
 
-  console.log(`[Embedding] 开始向量化查询文本，模型: ${model}, 提供商: ${config.embedding.provider}`);
+  console.log(`[Embedding] 开始向量化查询文本，模型：${model}, 提供商：${config.embedding.provider}`);
 
-  const vector = await embeddings.embedQuery(text);
+  const maxRetries = 3;
+  let lastError: Error | null = null;
 
-  console.log(`[Embedding] 查询向量化完成，向量维度: ${vector.length}`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 1) {
+        const waitTime = Math.pow(2, attempt - 1) * 1000;
+        console.log(`[Embedding] 第 ${attempt} 次重试，等待 ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
 
-  return {
-    vectors: [vector],
-    model,
-    dimensions: vector.length,
-  };
+      const vector = await embeddings.embedQuery(text);
+
+      console.log(`[Embedding] 查询向量化完成，向量维度：${vector.length}`);
+
+      return {
+        vectors: [vector],
+        model,
+        dimensions: vector.length,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(
+        `[Embedding] 第 ${attempt} 次尝试失败:`,
+        lastError.message
+      );
+
+      if (attempt < maxRetries) {
+        continue;
+      }
+    }
+  }
+
+  throw new Error(`查询向量化失败，已重试 ${maxRetries} 次：${lastError?.message || '未知错误'}`);
 }
 
 export function serializeVector(vector: number[]): string {

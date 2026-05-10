@@ -573,9 +573,18 @@ export async function POST(request: NextRequest) {
               );
             }
           }
-        }
 
-        embeddingSuccess = true;
+          console.log(
+            `[RAG Embedding] 向量化完成，成功：${successfulBatches} 批次，失败：${failedBatches} 批次`
+          );
+
+          embeddingSuccess = failedBatches === 0 && successfulBatches > 0;
+          if (!embeddingSuccess && successfulBatches === 0) {
+            embeddingError = "所有批次向量化失败";
+          } else if (!embeddingSuccess && failedBatches > 0) {
+            embeddingError = `${failedBatches} 个批次向量化失败`;
+          }
+        }
         console.log(
           `[RAG Embedding] 文档 "${title || session.fileName}" 向量化存储完成`
         );

@@ -311,48 +311,84 @@ export async function POST(request: NextRequest) {
 
         if (contents.length > 0) {
           const batchSize = 10;
+          let successfulBatches = 0;
+          let failedBatches = 0;
+          const maxBatchRetries = 2;
+
           for (let batch = 0; batch < contents.length; batch += batchSize) {
             const batchContents = contents.slice(batch, batch + batchSize);
             const batchChunks = validChunks.slice(batch, batch + batchSize);
+            const currentBatchNum = Math.floor(batch / batchSize) + 1;
+            const totalBatches = Math.ceil(contents.length / batchSize);
 
-            try {
-              const embeddingResult = await embedDocuments(batchContents);
-              console.log(
-                `[RAG Embedding] 批次 ${Math.floor(batch / batchSize) + 1}/${Math.ceil(contents.length / batchSize)} 向量化完成，模型: ${embeddingResult.model}`
-              );
+            let batchSuccess = false;
 
-              for (let i = 0; i < batchChunks.length && i < embeddingResult.vectors.length; i++) {
-                try {
-                  const metadata: ChunkMetadata = {
-                    documentId: document.id,
-                    knowledgeBaseId: docInfo?.knowledgeBaseId || null,
-                    content: batchChunks[i].content,
-                    index: batchChunks[i].index,
-                  };
+            for (let retry = 0; retry <= maxBatchRetries && !batchSuccess; retry++) {
+              try {
+                if (retry > 0) {
+                  const retryWait = retry * 2000;
+                  console.log(`[RAG Embedding] 批次 ${currentBatchNum} 第 ${retry} 次重试，等待 ${retryWait}ms...`);
+                  await new Promise(resolve => setTimeout(resolve, retryWait));
+                }
 
-                  await updateChunkEmbedding(
-                    batchChunks[i].id,
-                    embeddingResult.vectors[i],
-                    embeddingResult.model,
-                    metadata
-                  );
-                } catch (updateError) {
+                const embeddingResult = await embedDocuments(batchContents);
+                console.log(
+                  `[RAG Embedding] 批次 ${currentBatchNum}/${totalBatches} 向量化完成，模型：${embeddingResult.model}`
+                );
+
+                for (let i = 0; i < batchChunks.length && i < embeddingResult.vectors.length; i++) {
+                  try {
+                    const metadata: ChunkMetadata = {
+                      documentId: document.id,
+                      knowledgeBaseId: docInfo?.knowledgeBaseId || null,
+                      content: batchChunks[i].content,
+                      index: batchChunks[i].index,
+                    };
+
+                    await updateChunkEmbedding(
+                      batchChunks[i].id,
+                      embeddingResult.vectors[i],
+                      embeddingResult.model,
+                      metadata
+                    );
+                  } catch (updateError) {
+                    console.error(
+                      `[RAG Embedding] 片段 ${batchChunks[i].index} 向量存储失败，跳过:`,
+                      updateError instanceof Error ? updateError.message : "未知错误"
+                    );
+                  }
+                }
+
+                batchSuccess = true;
+                successfulBatches++;
+              } catch (batchError) {
+                const errorMsg = batchError instanceof Error ? batchError.message : "未知错误";
+                if (retry < maxBatchRetries) {
                   console.error(
-                    `[RAG Embedding] 片段 ${batchChunks[i].index} 向量存储失败，跳过:`,
-                    updateError instanceof Error ? updateError.message : "未知错误"
+                    `[RAG Embedding] 批次 ${currentBatchNum} 第 ${retry + 1} 次失败: ${errorMsg}，准备重试...`
                   );
+                } else {
+                  console.error(
+                    `[RAG Embedding] 批次 ${currentBatchNum} 向量化失败，已重试 ${maxBatchRetries + 1} 次，跳过该批次:`,
+                    errorMsg
+                  );
+                  failedBatches++;
                 }
               }
-            } catch (batchError) {
-              console.error(
-                `[RAG Embedding] 批次 ${Math.floor(batch / batchSize) + 1} 向量化失败，跳过该批次:`,
-                batchError instanceof Error ? batchError.message : "未知错误"
-              );
             }
           }
-        }
 
-        embeddingSuccess = true;
+          console.log(
+            `[RAG Embedding] 向量化完成，成功：${successfulBatches} 批次，失败：${failedBatches} 批次`
+          );
+
+          embeddingSuccess = failedBatches === 0 && successfulBatches > 0;
+          if (!embeddingSuccess && successfulBatches === 0) {
+            embeddingError = "所有批次向量化失败";
+          } else if (!embeddingSuccess && failedBatches > 0) {
+            embeddingError = `${failedBatches} 个批次向量化失败`;
+          }
+        }
         console.log(`[RAG Embedding] 文档 "${title}" 向量化存储完成`);
       } catch (error) {
         embeddingError = error instanceof Error ? error.message : "未知错误";

@@ -74,7 +74,7 @@ export default function SQLGeneratorPage() {
   const [requirement, setRequirement] = useState("");
   const [knowledgeBaseId, setKnowledgeBaseId] = useState<string>("");
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
-  const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("mysql");
+  const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("oracle");
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [generatedResult, setGeneratedResult] = useState<GeneratedResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -326,10 +326,10 @@ export default function SQLGeneratorPage() {
   };
 
   const exampleRequirements = [
-    "查询订单表中金额大于1000的订单，按创建时间排序",
-    "统计每个用户的订单数量和总金额，按订单数降序排列",
-    "查询本月的订单，关联用户表获取用户姓名和电话",
-    "统计每个月的销售额，包含订单数和平均金额",
+    "查询本月门诊患者数量，按科室统计就诊人次",
+    "统计本周住院患者的平均住院天数和总费用",
+    "查询药品库存低于警戒线的药品，按数量升序排列",
+    "统计本月各科室的开药金额排行",
   ];
 
   const loadExample = (example: string) => {
@@ -400,7 +400,7 @@ export default function SQLGeneratorPage() {
                   <textarea
                     value={requirement}
                     onChange={(e) => setRequirement(e.target.value)}
-                    placeholder="例如：查询订单表中金额大于1000的订单，按创建时间降序排列，只显示前10条"
+                    placeholder="例如：查询本月门诊患者数量，按科室统计就诊人次，关联科室表获取科室名称"
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   />

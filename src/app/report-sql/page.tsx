@@ -72,7 +72,7 @@ export default function ReportSQLPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [errorResponse, setErrorResponse] = useState<ErrorResponse | null>(null);
-  const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("mysql");
+  const [dialect, setDialect] = useState<"mysql" | "postgresql" | "sqlite" | "mssql" | "oracle">("oracle");
   const [showTooltip, setShowTooltip] = useState(false);
   const [selectedAlternativeId, setSelectedAlternativeId] = useState<number>(1);
 
@@ -133,11 +133,11 @@ export default function ReportSQLPage() {
   };
 
   const exampleRequirements = [
-    "查询订单表中金额大于1000的订单，按创建时间降序排列",
-    "统计每个用户的订单数量和总金额，按订单数降序排列",
-    "查询本月的订单，关联用户表获取用户姓名和电话",
-    "统计每个月的销售额，包含订单数和平均金额",
-    "查询最近30天内注册的用户及其订单统计",
+    "查询本月门诊患者数量，按科室统计就诊人次",
+    "统计本周住院患者的平均住院天数和总费用",
+    "查询药品库存低于警戒线的药品，按数量升序排列",
+    "统计本月各科室的开药金额排行",
+    "查询指定科室近30天的门诊处方数量和费用汇总",
   ];
 
   const handleGenerate = async () => {
@@ -577,7 +577,7 @@ export default function ReportSQLPage() {
                     value={requirement}
                     onChange={(e) => setRequirement(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="例如：查询订单表中金额大于1000的订单，按创建时间降序排列，关联用户表获取用户姓名"
+                    placeholder="例如：查询本月门诊患者数量，按科室统计就诊人次，关联科室表获取科室名称"
                     rows={8}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none text-sm"
                     disabled={isLoading}
@@ -815,9 +815,10 @@ export default function ReportSQLPage() {
                 </h4>
                 <ul className="text-sm text-blue-800 space-y-1">
                   <li>• 描述需求时尽量明确涉及的表和筛选条件</li>
-                  <li>• 如"统计每个用户的订单数量和总金额"</li>
+                  <li>• 如"按科室统计本月门诊处方数量和费用"</li>
                   <li>• AI 会严格使用知识库中的真实字段名</li>
                   <li>• 如果缺少必要字段，AI 会明确提示</li>
+                  <li>• 默认使用 Oracle 方言生成 SQL</li>
                 </ul>
               </div>
             </div>
@@ -910,9 +911,9 @@ export default function ReportSQLPage() {
                   <div className="mt-6 p-4 bg-gray-50 rounded-lg max-w-md text-sm text-gray-600">
                     <p className="font-medium mb-2">示例需求：</p>
                     <ul className="space-y-1 text-left">
-                      <li>• 查询订单表中金额大于1000的订单</li>
-                      <li>• 统计每个用户的订单数量和总金额</li>
-                      <li>• 查询本月订单并关联用户信息</li>
+                      <li>• 查询本月门诊患者数量，按科室统计</li>
+                      <li>• 统计住院患者的平均住院天数</li>
+                      <li>• 查询药品库存低于警戒线的药品</li>
                     </ul>
                   </div>
                 </div>

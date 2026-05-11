@@ -23,11 +23,11 @@
 
 ### 支持的 AI 提供商
 
-| 提供商 | Embedding 模型 | LLM 模型 |
-|--------|---------------|----------|
-| **OpenAI** | text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002 | gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini, gpt-4-turbo |
-| **DeepSeek** | deepseek-embedding | deepseek-chat, deepseek-reasoner, deepseek-coder, deepseek-v4-pro, deepseek-v4-flash |
-| **DashScope (阿里云)** | text-embedding-v1, text-embedding-v2, text-embedding-v3 | qwen-turbo, qwen-plus, qwen-max, qwen-7b-chat, qwen-14b-chat, qwen2.5-72b-instruct |
+| 提供商                 | Embedding 模型                                                           | LLM 模型                                                                               |
+| ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **OpenAI**          | text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002 | gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini, gpt-4-turbo                               |
+| **DeepSeek**        | deepseek-embedding                                                     | deepseek-chat, deepseek-reasoner, deepseek-coder, deepseek-v4-pro, deepseek-v4-flash |
+| **DashScope (阿里云)** | text-embedding-v1, text-embedding-v2, text-embedding-v3                | qwen-turbo, qwen-plus, qwen-max, qwen-7b-chat, qwen-14b-chat, qwen2.5-72b-instruct   |
 
 ## 技术栈
 
@@ -66,7 +66,7 @@ npm install
 cp .env.example .env
 ```
 
-2. 编辑 `.env` 文件，确保使用 SQLite 配置：
+1. 编辑 `.env` 文件，确保使用 SQLite 配置：
 
 ```env
 DATABASE_URL="file:./dev.db"
@@ -80,13 +80,13 @@ DATABASE_URL="file:./dev.db"
 cp .env.example .env
 ```
 
-2. 启动 PostgreSQL 服务：
+1. 启动 PostgreSQL 服务：
 
 ```bash
 docker-compose up -d
 ```
 
-3. 检查数据库状态：
+1. 检查数据库状态：
 
 ```bash
 docker-compose ps
@@ -114,23 +114,25 @@ npx prisma migrate dev --name init
 
 #### 数据库类型对比
 
-| 数据库类型 | Prisma 原生支持 | 推荐使用场景 | 默认端口 | 默认用户 | 默认数据库 |
-|-----------|----------------|-------------|---------|---------|-----------|
-| **SQLite** | ✅ 是 | 开发环境、小型应用 | - | - | dev.db |
-| **PostgreSQL** | ✅ 是 | 生产环境、企业级 | 5432 | postgres | intelligent_knowledge_base |
-| **MySQL** | ✅ 是 | 生产环境、Web应用 | 3306 | root | intelligent_knowledge_base |
-| **Oracle** | ❌ 否 | 企业级遗留系统 | 1521 | system | ORCL |
+| 数据库类型          | Prisma 原生支持 | 推荐使用场景     | 默认端口 | 默认用户     | 默认数据库                        |
+| -------------- | ----------- | ---------- | ---- | -------- | ---------------------------- |
+| **SQLite**     | ✅ 是         | 开发环境、小型应用  | -    | -        | dev.db                       |
+| **PostgreSQL** | ✅ 是         | 生产环境、企业级   | 5432 | postgres | intelligent\_knowledge\_base |
+| **MySQL**      | ✅ 是         | 生产环境、Web应用 | 3306 | root     | intelligent\_knowledge\_base |
+| **Oracle**     | ❌ 否         | 企业级遗留系统    | 1521 | system   | ORCL                         |
 
 #### 方式一：环境变量配置（初始配置）
 
 编辑 `.env` 文件，设置数据库连接：
 
 **SQLite 配置**：
+
 ```env
 DATABASE_URL="file:./dev.db"
 ```
 
 **PostgreSQL 配置**：
+
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/intelligent_knowledge_base"
 DB_USER="postgres"
@@ -141,6 +143,7 @@ DB_HOST="localhost"
 ```
 
 **MySQL 配置**：
+
 ```env
 DATABASE_URL="mysql://root:password@localhost:3306/intelligent_knowledge_base"
 DB_USER="root"
@@ -151,6 +154,7 @@ DB_HOST="localhost"
 ```
 
 **Oracle 配置**（仅用于测试连接）：
+
 ```env
 DATABASE_URL="oracle:thin:system/password@localhost:1521:ORCL"
 DB_USER="system"
@@ -169,6 +173,7 @@ DB_SERVICE_NAME="ORCL"
 3. 选择数据库类型并填写相应配置：
 
 **通用配置项**：
+
 - **主机地址**：数据库服务器地址（默认：localhost）
 - **端口**：数据库端口
 - **用户名**：数据库用户名
@@ -176,6 +181,7 @@ DB_SERVICE_NAME="ORCL"
 - **数据库名**：数据库名称
 
 **Oracle 特有配置项**：
+
 - **SID**：数据库实例名（如 ORCL、XE）
 - **Service Name**：服务名（可选，用于 Oracle 12c+）
 
@@ -259,52 +265,53 @@ DB_SERVICE_NAME="ORCL"
 
 #### 数据存储分工详解
 
-| 数据类型 | 存储位置 | 说明 |
-|---------|---------|------|
-| **用户数据** | 关系型数据库 | 用户表、角色、权限、认证信息 |
-| **知识库元数据** | 关系型数据库 | 知识库名称、描述、可见性、所有者 |
-| **文档元数据** | 关系型数据库 | 文档标题、文件类型、大小、状态、作者 |
-| **文档分块内容** | 关系型数据库 | 分块后的文本内容（用于 RAG 上下文） |
-| **向量数据副本** | 关系型数据库 | `document_chunks.embedding` 字段，JSON 格式 |
-| **向量数据索引** | 向量数据库 (Milvus) | `embedding` 字段，FloatVector 类型，带索引 |
-| **向量关联元数据** | 向量数据库 (Milvus) | document_id, knowledge_base_id, content 等 |
-| **系统配置** | 关系型数据库 | AI 配置、RAG 配置、Milvus 配置等 |
-| **SQL 查询历史** | 关系型数据库 | 自然语言转 SQL 的查询记录 |
-| **数据库表元数据** | 关系型数据库 | 表结构、列信息、表关系 |
+| 数据类型         | 存储位置           | 说明                                           |
+| ------------ | -------------- | -------------------------------------------- |
+| **用户数据**     | 关系型数据库         | 用户表、角色、权限、认证信息                               |
+| **知识库元数据**   | 关系型数据库         | 知识库名称、描述、可见性、所有者                             |
+| **文档元数据**    | 关系型数据库         | 文档标题、文件类型、大小、状态、作者                           |
+| **文档分块内容**   | 关系型数据库         | 分块后的文本内容（用于 RAG 上下文）                         |
+| **向量数据副本**   | 关系型数据库         | `document_chunks.embedding` 字段，JSON 格式       |
+| **向量数据索引**   | 向量数据库 (Milvus) | `embedding` 字段，FloatVector 类型，带索引            |
+| **向量关联元数据**  | 向量数据库 (Milvus) | document\_id, knowledge\_base\_id, content 等 |
+| **系统配置**     | 关系型数据库         | AI 配置、RAG 配置、Milvus 配置等                      |
+| **SQL 查询历史** | 关系型数据库         | 自然语言转 SQL 的查询记录                              |
+| **数据库表元数据**  | 关系型数据库         | 表结构、列信息、表关系                                  |
 
 #### 关系型数据库表结构
 
 系统使用 Prisma ORM 管理关系型数据库，包含以下核心表：
 
-| 表名 | 主要字段 | 说明 |
-|------|---------|------|
-| **users** | id, email, password, name, role, status | 用户表 |
-| **knowledge_bases** | id, name, description, visibility, ownerId | 知识库表 |
-| **documents** | id, title, content, fileUrl, fileType, status, authorId, knowledgeBaseId | 文档表 |
-| **document_chunks** | id, documentId, index, content, **embedding** (JSON), embeddingModel | 文档分块表 |
-| **system_configs** | configKey, configValue, description | 系统配置表 |
-| **database_tables** | name, schemaName, tableComment, knowledgeBaseId | 数据库表元数据 |
-| **table_columns** | tableId, name, dataType, isNullable, isPrimaryKey | 表列信息 |
-| **table_relations** | fromTableId, fromColumnName, toTableId, toColumnName | 表关系 |
-| **sql_queries** | query, queryType, description, tables, columns | 保存的 SQL 查询 |
-| **query_history** | userQuery, generatedSQL, executionResult, isSuccess | 查询历史 |
+| 表名                   | 主要字段                                                                     | 说明         |
+| -------------------- | ------------------------------------------------------------------------ | ---------- |
+| **users**            | id, email, password, name, role, status                                  | 用户表        |
+| **knowledge\_bases** | id, name, description, visibility, ownerId                               | 知识库表       |
+| **documents**        | id, title, content, fileUrl, fileType, status, authorId, knowledgeBaseId | 文档表        |
+| **document\_chunks** | id, documentId, index, content, **embedding** (JSON), embeddingModel     | 文档分块表      |
+| **system\_configs**  | configKey, configValue, description                                      | 系统配置表      |
+| **database\_tables** | name, schemaName, tableComment, knowledgeBaseId                          | 数据库表元数据    |
+| **table\_columns**   | tableId, name, dataType, isNullable, isPrimaryKey                        | 表列信息       |
+| **table\_relations** | fromTableId, fromColumnName, toTableId, toColumnName                     | 表关系        |
+| **sql\_queries**     | query, queryType, description, tables, columns                           | 保存的 SQL 查询 |
+| **query\_history**   | userQuery, generatedSQL, executionResult, isSuccess                      | 查询历史       |
 
 #### 向量数据库集合结构
 
 当 Milvus 启用时，系统会自动创建 `document_chunks` 集合：
 
-| 字段名 | 数据类型 | 说明 |
-|--------|---------|------|
-| **id** | VarChar(64) | 主键，使用 chunk_id |
-| **chunk_id** | VarChar(64) | 文档切片 ID（对应关系型数据库的 id） |
-| **document_id** | VarChar(64) | 所属文档 ID |
-| **knowledge_base_id** | VarChar(64) | 所属知识库 ID |
-| **content** | VarChar(65535) | 切片文本内容（冗余存储，用于快速检索） |
-| **embedding** | FloatVector | 向量数据（维度由配置决定） |
-| **model** | VarChar(256) | 使用的 Embedding 模型 |
+| 字段名                     | 数据类型           | 说明                    |
+| ----------------------- | -------------- | --------------------- |
+| **id**                  | VarChar(64)    | 主键，使用 chunk\_id       |
+| **chunk\_id**           | VarChar(64)    | 文档切片 ID（对应关系型数据库的 id） |
+| **document\_id**        | VarChar(64)    | 所属文档 ID               |
+| **knowledge\_base\_id** | VarChar(64)    | 所属知识库 ID              |
+| **content**             | VarChar(65535) | 切片文本内容（冗余存储，用于快速检索）   |
+| **embedding**           | FloatVector    | 向量数据（维度由配置决定）         |
+| **model**               | VarChar(256)   | 使用的 Embedding 模型      |
 
 **索引配置**：
-- **索引类型**：IVF_FLAT
+
+- **索引类型**：IVF\_FLAT
 - **度量类型**：COSINE（余弦相似度）
 - **参数**：nlist = 1024
 
@@ -346,10 +353,10 @@ DB_SERVICE_NAME="ORCL"
 ```
 
 **写入机制**：
+
 1. **双写策略**：新上传的文档向量会同时写入：
    - 关系型数据库的 `document_chunks.embedding` 字段（JSON 格式）
    - Milvus 的 `document_chunks` 集合（如果 Milvus 已启用）
-
 2. **数据一致性**：
    - 关系型数据库中的向量数据**始终保留**
    - Milvus 中的向量数据是**副本**，用于高性能搜索
@@ -395,6 +402,7 @@ DB_SERVICE_NAME="ORCL"
 ```
 
 **搜索机制**：
+
 1. **自动切换**：根据 `milvus.enabled` 配置自动选择搜索后端
 2. **Milvus 启用时**：
    - 使用 Milvus 专用向量索引进行搜索
@@ -458,23 +466,23 @@ DB_SERVICE_NAME="ORCL"
 
 #### 数据安全保障
 
-| 保障机制 | 说明 |
-|---------|------|
-| **双写策略** | 向量数据同时写入关系型数据库和 Milvus |
+| 保障机制      | 说明                       |
+| --------- | ------------------------ |
+| **双写策略**  | 向量数据同时写入关系型数据库和 Milvus   |
 | **主副本架构** | 关系型数据库是主存储，Milvus 是副本/索引 |
-| **向后兼容** | 可随时切换向量存储后端，无需数据转换 |
-| **幂等迁移** | 迁移工具可多次执行，不会重复或丢失数据 |
-| **软删除** | 删除操作不会物理删除数据，可恢复 |
+| **向后兼容**  | 可随时切换向量存储后端，无需数据转换       |
+| **幂等迁移**  | 迁移工具可多次执行，不会重复或丢失数据      |
+| **软删除**   | 删除操作不会物理删除数据，可恢复         |
 
 ### 向量数据库配置（Milvus）
 
-> 📖 **详细配置指南**：关于 Milvus 的完整配置、管理和故障排除，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md)。
+> 📖 **详细配置指南**：关于 Milvus 的完整配置、管理和故障排除，请参考 [MILVUS\_SETUP.md](./MILVUS_SETUP.md)。
 
 系统支持 **Milvus** 高性能向量数据库，用于存储和搜索文档向量。Milvus 是一个开源的向量数据库，专门为 AI 应用设计，支持：
 
 - 高性能向量相似度搜索
 - 大规模向量存储
-- 多种索引类型（IVF_FLAT、IVF_PQ、HNSW 等）
+- 多种索引类型（IVF\_FLAT、IVF\_PQ、HNSW 等）
 - 动态字段支持
 
 #### 向量存储架构
@@ -520,14 +528,14 @@ DB_SERVICE_NAME="ORCL"
 
 #### 向量后端对比
 
-| 特性 | 关系型数据库（默认） | Milvus 向量数据库 |
-|------|---------------------|-------------------|
-| **存储方式** | 向量以 JSON 存储在 `embedding` 字段 | 专用向量存储引擎 |
-| **搜索方式** | 内存计算余弦相似度 | 专用索引加速搜索 |
-| **性能** | 适合小规模数据（< 10K 向量） | 适合大规模数据（> 10K 向量） |
-| **扩展性** | 受限于数据库查询性能 | 支持分布式部署，水平扩展 |
-| **配置要求** | 无需额外配置 | 需要部署 Milvus 服务 |
-| **适用场景** | 开发测试、小型应用 | 生产环境、高性能搜索 |
+| 特性       | 关系型数据库（默认）                  | Milvus 向量数据库      |
+| -------- | --------------------------- | ----------------- |
+| **存储方式** | 向量以 JSON 存储在 `embedding` 字段 | 专用向量存储引擎          |
+| **搜索方式** | 内存计算余弦相似度                   | 专用索引加速搜索          |
+| **性能**   | 适合小规模数据（< 10K 向量）           | 适合大规模数据（> 10K 向量） |
+| **扩展性**  | 受限于数据库查询性能                  | 支持分布式部署，水平扩展      |
+| **配置要求** | 无需额外配置                      | 需要部署 Milvus 服务    |
+| **适用场景** | 开发测试、小型应用                   | 生产环境、高性能搜索        |
 
 #### 双后端特性
 
@@ -551,13 +559,13 @@ docker-compose -f docker-compose-milvus.yml up -d
 
 **服务组件**：
 
-| 服务 | 容器名 | 端口 | 说明 |
-|------|--------|------|------|
+| 服务         | 容器名               | 端口          | 说明       |
+| ---------- | ----------------- | ----------- | -------- |
 | **Milvus** | milvus-standalone | 19530, 9091 | 向量数据库主服务 |
-| **etcd** | milvus-etcd | 2379-2380 | 元数据存储 |
-| **MinIO** | milvus-minio | 9000-9001 | 对象存储 |
+| **etcd**   | milvus-etcd       | 2379-2380   | 元数据存储    |
+| **MinIO**  | milvus-minio      | 9000-9001   | 对象存储     |
 
-> 📖 **详细配置**：关于 Milvus 的完整配置、管理命令、故障排除和高级设置，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md)。
+> 📖 **详细配置**：关于 Milvus 的完整配置、管理命令、故障排除和高级设置，请参考 [MILVUS\_SETUP.md](./MILVUS_SETUP.md)。
 
 ##### 配置 Milvus 连接
 
@@ -569,17 +577,18 @@ docker-compose -f docker-compose-milvus.yml up -d
 2. 进入「管理后台」→「系统设置」→「Milvus 配置」
 3. 填写以下配置：
 
-| 配置项 | 说明 | 默认值 |
-|--------|------|--------|
-| **启用 Milvus** | 是否使用 Milvus 作为向量存储后端 | 关闭 |
-| **主机地址** | Milvus 服务器地址 | localhost |
-| **端口** | Milvus 服务端口 | 19530 |
-| **用户名** | Milvus 认证用户名（可选） | 空 |
-| **密码** | Milvus 认证密码（可选） | 空 |
-| **集合名称** | 存储向量的集合名称 | document_chunks |
-| **向量维度** | Embedding 模型输出的向量维度 | 1024 |
+| 配置项           | 说明                   | 默认值              |
+| ------------- | -------------------- | ---------------- |
+| **启用 Milvus** | 是否使用 Milvus 作为向量存储后端 | 关闭               |
+| **主机地址**      | Milvus 服务器地址         | localhost        |
+| **端口**        | Milvus 服务端口          | 19530            |
+| **用户名**       | Milvus 认证用户名（可选）     | 空                |
+| **密码**        | Milvus 认证密码（可选）      | 空                |
+| **集合名称**      | 存储向量的集合名称            | document\_chunks |
+| **向量维度**      | Embedding 模型输出的向量维度  | 1024             |
 
 > ⚠️ **注意**：向量维度必须与实际使用的 Embedding 模型输出维度一致：
+>
 > - DashScope `text-embedding-v1/v2`: 1024 维
 > - DashScope `text-embedding-v3`: 1024 维
 > - OpenAI `text-embedding-3-small`: 1536 维（默认）
@@ -606,7 +615,7 @@ MILVUS_DIMENSIONS=1024
 1. **测试连接**：点击「测试连接」按钮验证 Milvus 服务是否可访问
 2. **初始化集合**：点击「初始化集合」创建必要的集合和索引
    - 会自动创建 `document_chunks` 集合
-   - 会自动创建 `embedding` 字段的 IVF_FLAT 索引（余弦相似度）
+   - 会自动创建 `embedding` 字段的 IVF\_FLAT 索引（余弦相似度）
    - 会自动加载集合到内存
 3. **启用 Milvus**：开启「启用 Milvus」开关并保存
 4. **数据迁移**：如果有历史数据，点击「开始迁移」将向量从关系型数据库迁移到 Milvus
@@ -649,6 +658,7 @@ MILVUS_DIMENSIONS=1024
 3. 点击「开始迁移」按钮启动迁移
 
 迁移状态显示：
+
 - **状态**：运行中 / 已停止
 - **进度**：已处理 / 总数
 - **错误**：迁移失败的数量
@@ -675,25 +685,26 @@ curl -X POST http://localhost:3005/api/admin/milvus-migrate \
 
 - **批量处理**：每次处理 100 个向量，减少内存占用
 - **错误处理**：单个向量迁移失败不影响其他向量，错误会被记录
-- **幂等性**：可多次执行迁移，已存在的向量会被覆盖（使用 chunk_id 作为主键）
+- **幂等性**：可多次执行迁移，已存在的向量会被覆盖（使用 chunk\_id 作为主键）
 - **向后兼容**：关系型数据库中的向量数据不会被删除
 
 #### Milvus 集合结构
 
 系统自动创建的 `document_chunks` 集合结构：
 
-| 字段名 | 数据类型 | 说明 |
-|--------|---------|------|
-| **id** | VarChar(64) | 主键，使用 chunk_id |
-| **chunk_id** | VarChar(64) | 文档切片 ID |
-| **document_id** | VarChar(64) | 所属文档 ID |
-| **knowledge_base_id** | VarChar(64) | 所属知识库 ID |
-| **content** | VarChar(65535) | 切片文本内容 |
-| **embedding** | FloatVector | 向量数据（维度由配置决定） |
-| **model** | VarChar(256) | 使用的 Embedding 模型 |
+| 字段名                     | 数据类型           | 说明               |
+| ----------------------- | -------------- | ---------------- |
+| **id**                  | VarChar(64)    | 主键，使用 chunk\_id  |
+| **chunk\_id**           | VarChar(64)    | 文档切片 ID          |
+| **document\_id**        | VarChar(64)    | 所属文档 ID          |
+| **knowledge\_base\_id** | VarChar(64)    | 所属知识库 ID         |
+| **content**             | VarChar(65535) | 切片文本内容           |
+| **embedding**           | FloatVector    | 向量数据（维度由配置决定）    |
+| **model**               | VarChar(256)   | 使用的 Embedding 模型 |
 
 **索引配置**：
-- **索引类型**：IVF_FLAT
+
+- **索引类型**：IVF\_FLAT
 - **度量类型**：COSINE（余弦相似度）
 - **参数**：nlist = 1024
 
@@ -703,11 +714,11 @@ curl -X POST http://localhost:3005/api/admin/milvus-migrate \
 
 ##### 配置项说明
 
-| 配置项 | 普通文档默认值 | SQL 文档默认值 | 说明 |
-|--------|---------------|---------------|------|
-| **文本分片大小** (chunkSize) | 500 字符 | 4000 字符 | 每个文本片段的目标大小 |
-| **分片重叠大小** (chunkOverlap) | 50 字符 | 0 字符 | 相邻片段之间的重叠字符数 |
-| **最大单块大小** (maxSingleChunkSize) | 2000 字符 | 8000 字符 | 单个片段的最大限制 |
+| 配置项                             | 普通文档默认值 | SQL 文档默认值 | 说明           |
+| ------------------------------- | ------- | --------- | ------------ |
+| **文本分片大小** (chunkSize)          | 500 字符  | 4000 字符   | 每个文本片段的目标大小  |
+| **分片重叠大小** (chunkOverlap)       | 50 字符   | 0 字符      | 相邻片段之间的重叠字符数 |
+| **最大单块大小** (maxSingleChunkSize) | 2000 字符 | 8000 字符   | 单个片段的最大限制    |
 
 ##### SQL 文档特殊处理
 
@@ -717,7 +728,6 @@ SQL 文档使用不同的分块策略：
    - 匹配 `CREATE TABLE`、`CREATE OR REPLACE FUNCTION` 等语句
    - 每个 DDL 语句作为独立片段
    - 保持语句完整性
-
 2. **推荐配置**：
    - 较大的分片大小（4000 字符）
    - 零重叠（避免语句重复）
@@ -906,11 +916,13 @@ npm run dev
 支持**普通文档**和 **SQL 文档**的分块参数独立配置：
 
 **普通文档配置**（适用于 PDF、DOCX、TXT）：
+
 - 文本分片大小 (chunkSize)：默认 500 字符
 - 分片重叠大小 (chunkOverlap)：默认 50 字符
 - 最大单块大小 (maxSingleChunkSize)：默认 2000 字符
 
 **SQL 文档配置**（适用于 `.sql` 文件）：
+
 - 文本分片大小 (chunkSize)：默认 4000 字符
 - 分片重叠大小 (chunkOverlap)：默认 0 字符
 - 最大单块大小 (maxSingleChunkSize)：默认 8000 字符
@@ -920,26 +932,30 @@ npm run dev
 ##### 标签页 3：Milvus 配置
 
 **Milvus 连接配置**：
+
 - 启用 Milvus：开关控制是否使用 Milvus 作为向量存储后端
 - 主机地址：Milvus 服务器地址（默认：localhost）
 - 端口：Milvus 服务端口（默认：19530）
 - 用户名：Milvus 认证用户名（可选）
 - 密码：Milvus 认证密码（可选）
-- 集合名称：存储向量的集合名称（默认：document_chunks）
+- 集合名称：存储向量的集合名称（默认：document\_chunks）
 - 向量维度：Embedding 模型输出的向量维度（默认：1024）
 
 **操作按钮**：
+
 - **测试连接**：验证 Milvus 服务是否可访问
-- **初始化集合**：创建集合和索引（IVF_FLAT，余弦相似度）
+- **初始化集合**：创建集合和索引（IVF\_FLAT，余弦相似度）
 - **保存配置**：保存所有配置
 
 **数据迁移区域**：
+
 - **Milvus 状态**：显示是否启用、集合名称、向量总数、维度
 - **迁移状态**：显示是否运行中、进度、错误数量
 - **进度条**：可视化展示迁移进度
 - **开始迁移**：启动全量数据迁移（从关系型数据库到 Milvus）
 
 > ⚠️ **重要提示**：向量维度必须与实际使用的 Embedding 模型输出维度一致。例如：
+>
 > - DashScope `text-embedding-v2`: 1024 维
 > - OpenAI `text-embedding-3-small`: 1536 维
 
@@ -948,12 +964,14 @@ npm run dev
 AI 配置已整合到系统设置的基本设置中，包括：
 
 **Embedding 配置**：
+
 - 提供商：OpenAI / DeepSeek / DashScope
 - API Key：加密存储
 - Base URL：可选（用于兼容 OpenAI 接口的第三方服务）
 - 模型名称：如 `text-embedding-v2`、`text-embedding-3-small` 等
 
 **LLM 配置**：
+
 - 提供商：OpenAI / DeepSeek / DashScope
 - API Key：加密存储
 - Base URL：可选
@@ -972,12 +990,10 @@ AI 配置已整合到系统设置的基本设置中，包括：
    ```
    上传文件 → 文本提取 → 文档切片 → 向量化 → 存储向量
    ```
-
 2. **检索流程**：
    ```
    用户问题 → 问题向量化 → 相似度搜索 → 相关文档切片 → 构建 Prompt → LLM 回答
    ```
-
 3. **API 端点**：
    - `POST /api/documents/upload` - 上传并处理文档
    - `POST /api/qa/search` - 向量相似度搜索
@@ -991,30 +1007,28 @@ AI 配置已整合到系统设置的基本设置中，包括：
    - 支持关联知识库
    - 自动识别表结构
    - 管理表关系
-
 2. **查询流程**：
    ```
    自然语言问题 → 识别相关表 → 获取表结构 → 构建 Prompt → LLM 生成 SQL → 执行查询 → 返回结果
    ```
-
 3. **API 端点**：
    - `POST /api/qa/sql` - 自然语言转 SQL
 
 ### 用户角色与权限
 
-| 角色 | 说明 | 权限 |
-|------|------|------|
-| **ADMIN** | 管理员 | 所有权限 + 用户管理 + 系统设置 |
-| **EDITOR** | 编辑者 | 上传文档、编辑文档、创建知识库 |
-| **VIEWER** | 查看者 | 查看文档、搜索文档 |
+| 角色         | 说明  | 权限                 |
+| ---------- | --- | ------------------ |
+| **ADMIN**  | 管理员 | 所有权限 + 用户管理 + 系统设置 |
+| **EDITOR** | 编辑者 | 上传文档、编辑文档、创建知识库    |
+| **VIEWER** | 查看者 | 查看文档、搜索文档          |
 
 ### 用户状态
 
-| 状态 | 说明 |
-|------|------|
-| **PENDING** | 待审核 | 新注册用户，默认状态，需管理员审核 |
-| **ACTIVE** | 正常 | 已激活用户，可正常使用 |
-| **DISABLED** | 禁用 | 被禁用用户，无法登录 |
+| 状态           | 说明  | <br />            |
+| ------------ | --- | ----------------- |
+| **PENDING**  | 待审核 | 新注册用户，默认状态，需管理员审核 |
+| **ACTIVE**   | 正常  | 已激活用户，可正常使用       |
+| **DISABLED** | 禁用  | 被禁用用户，无法登录        |
 
 ### 软删除机制
 
@@ -1028,72 +1042,76 @@ AI 配置已整合到系统设置的基本设置中，包括：
 
 ### User（用户）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | String | 唯一标识符 |
-| email | String | 邮箱（唯一） |
-| password | String | 密码 |
-| name | String? | 姓名（可选） |
-| role | String | 角色（VIEWER/EDITOR/ADMIN），默认 VIEWER |
-| status | String | 状态（PENDING/ACTIVE/DISABLED），默认 PENDING |
-| avatar | String? | 头像（可选） |
-| profile | String? | 个人简介（可选） |
-| createdAt | DateTime | 创建时间 |
-| updatedAt | DateTime | 更新时间 |
-| deletedAt | DateTime? | 删除时间（软删除标记） |
+| 字段        | 类型        | 说明                                     |
+| --------- | --------- | -------------------------------------- |
+| id        | String    | 唯一标识符                                  |
+| email     | String    | 邮箱（唯一）                                 |
+| password  | String    | 密码                                     |
+| name      | String?   | 姓名（可选）                                 |
+| role      | String    | 角色（VIEWER/EDITOR/ADMIN），默认 VIEWER      |
+| status    | String    | 状态（PENDING/ACTIVE/DISABLED），默认 PENDING |
+| avatar    | String?   | 头像（可选）                                 |
+| profile   | String?   | 个人简介（可选）                               |
+| createdAt | DateTime  | 创建时间                                   |
+| updatedAt | DateTime  | 更新时间                                   |
+| deletedAt | DateTime? | 删除时间（软删除标记）                            |
 
 ### KnowledgeBase（知识库）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | String | 唯一标识符 |
-| name | String | 名称 |
-| description | String? | 描述（可选） |
-| visibility | String | 可见性（PRIVATE/PUBLIC），默认 PRIVATE |
-| ownerId | String | 所有者ID |
-| createdAt | DateTime | 创建时间 |
-| updatedAt | DateTime | 更新时间 |
+| 字段          | 类型       | 说明                             |
+| ----------- | -------- | ------------------------------ |
+| id          | String   | 唯一标识符                          |
+| name        | String   | 名称                             |
+| description | String?  | 描述（可选）                         |
+| visibility  | String   | 可见性（PRIVATE/PUBLIC），默认 PRIVATE |
+| ownerId     | String   | 所有者ID                          |
+| createdAt   | DateTime | 创建时间                           |
+| updatedAt   | DateTime | 更新时间                           |
 
 ### Document（文档）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | String | 唯一标识符 |
-| title | String | 标题 |
-| content | String? | 提取的文本内容（可选） |
-| fileUrl | String? | 文件路径（可选） |
-| fileType | String? | 文件类型（可选） |
-| fileSize | BigInt? | 文件大小（可选） |
-| status | String | 状态（DRAFT/PUBLISHED/ARCHIVED），默认 DRAFT |
-| authorId | String? | 作者ID（可选） |
-| knowledgeBaseId | String? | 知识库ID（可选） |
-| vectorId | String? | 向量存储ID（可选） |
-| createdAt | DateTime | 创建时间 |
-| updatedAt | DateTime | 更新时间 |
-| deletedAt | DateTime? | 删除时间（软删除标记） |
+| 字段              | 类型        | 说明                                    |
+| --------------- | --------- | ------------------------------------- |
+| id              | String    | 唯一标识符                                 |
+| title           | String    | 标题                                    |
+| content         | String?   | 提取的文本内容（可选）                           |
+| fileUrl         | String?   | 文件路径（可选）                              |
+| fileType        | String?   | 文件类型（可选）                              |
+| fileSize        | BigInt?   | 文件大小（可选）                              |
+| status          | String    | 状态（DRAFT/PUBLISHED/ARCHIVED），默认 DRAFT |
+| authorId        | String?   | 作者ID（可选）                              |
+| knowledgeBaseId | String?   | 知识库ID（可选）                             |
+| vectorId        | String?   | 向量存储ID（可选）                            |
+| createdAt       | DateTime  | 创建时间                                  |
+| updatedAt       | DateTime  | 更新时间                                  |
+| deletedAt       | DateTime? | 删除时间（软删除标记）                           |
 
 ### DocumentChunk（文档切片）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | String | 唯一标识符 |
-| documentId | String | 所属文档ID |
-| index | Int | 切片索引 |
-| content | String | 切片内容 |
-| vectorId | String? | 向量存储ID（可选） |
-| embedding | String? | 向量数据（序列化，可选） |
-| embeddingModel | String? | 使用的向量化模型（可选） |
-| createdAt | DateTime | 创建时间 |
-| updatedAt | DateTime | 更新时间 |
+| 字段             | 类型       | 说明           |
+| -------------- | -------- | ------------ |
+| id             | String   | 唯一标识符        |
+| documentId     | String   | 所属文档ID       |
+| index          | Int      | 切片索引         |
+| content        | String   | 切片内容         |
+| vectorId       | String?  | 向量存储ID（可选）   |
+| embedding      | String?  | 向量数据（序列化，可选） |
+| embeddingModel | String?  | 使用的向量化模型（可选） |
+| createdAt      | DateTime | 创建时间         |
+| updatedAt      | DateTime | 更新时间         |
 
 ### DatabaseTable（数据库表）
 
 用于 Text-to-SQL 功能的表元数据管理。
 
 ### TableColumn（表字段）
+
 ### TableRelation（表关系）
+
 ### SQLQuery（SQL 查询记录）
+
 ### QueryHistory（查询历史）
+
 ### SystemConfig（系统配置）
 
 用于存储 AI 配置等系统设置，敏感数据加密存储。
@@ -1102,37 +1120,37 @@ AI 配置已整合到系统设置的基本设置中，包括：
 
 ### 认证相关
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/auth/login` | 用户登录 |
-| POST | `/api/auth/logout` | 用户登出 |
+| 方法   | 路径                   | 说明   |
+| ---- | -------------------- | ---- |
+| POST | `/api/auth/login`    | 用户登录 |
+| POST | `/api/auth/logout`   | 用户登出 |
 | POST | `/api/auth/register` | 用户注册 |
 
 ### 文档相关
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/documents` | 获取文档列表（公开文档） |
-| POST | `/api/documents/upload` | 上传文档 |
-| POST | `/api/documents/chunk/complete` | 完成文档切片处理 |
-| GET | `/api/uploads/[filename]` | 访问上传的文件 |
+| 方法   | 路径                              | 说明           |
+| ---- | ------------------------------- | ------------ |
+| GET  | `/api/documents`                | 获取文档列表（公开文档） |
+| POST | `/api/documents/upload`         | 上传文档         |
+| POST | `/api/documents/chunk/complete` | 完成文档切片处理     |
+| GET  | `/api/uploads/[filename]`       | 访问上传的文件      |
 
 ### 管理后台 API
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET/POST | `/api/admin/ai-config` | 获取/保存 AI 配置 |
-| GET/PUT/POST | `/api/admin/milvus-config` | 获取/保存 Milvus 配置 / 测试连接 / 初始化集合 |
-| GET/POST | `/api/admin/milvus-migrate` | 获取迁移状态 / 启动迁移 / 单文档迁移 |
-| GET/PUT/POST | `/api/admin/rag-config` | 获取/保存 RAG 配置 |
-| GET/DELETE | `/api/admin/documents` | 获取文档列表/批量删除 |
-| GET/PATCH/DELETE | `/api/admin/documents/[id]` | 获取/更新/删除单个文档 |
-| POST | `/api/admin/documents/[id]/reparse` | 重新解析文档 |
-| GET/POST | `/api/admin/knowledge-bases` | 获取/创建知识库 |
-| GET/PATCH/DELETE | `/api/admin/knowledge-bases/[id]` | 获取/更新/删除知识库 |
-| GET | `/api/admin/stats` | 获取系统统计 |
-| GET | `/api/admin/users` | 获取用户列表 |
-| PATCH/DELETE | `/api/admin/users/[id]` | 更新/删除用户 |
+| 方法               | 路径                                  | 说明                             |
+| ---------------- | ----------------------------------- | ------------------------------ |
+| GET/POST         | `/api/admin/ai-config`              | 获取/保存 AI 配置                    |
+| GET/PUT/POST     | `/api/admin/milvus-config`          | 获取/保存 Milvus 配置 / 测试连接 / 初始化集合 |
+| GET/POST         | `/api/admin/milvus-migrate`         | 获取迁移状态 / 启动迁移 / 单文档迁移          |
+| GET/PUT/POST     | `/api/admin/rag-config`             | 获取/保存 RAG 配置                   |
+| GET/DELETE       | `/api/admin/documents`              | 获取文档列表/批量删除                    |
+| GET/PATCH/DELETE | `/api/admin/documents/[id]`         | 获取/更新/删除单个文档                   |
+| POST             | `/api/admin/documents/[id]/reparse` | 重新解析文档                         |
+| GET/POST         | `/api/admin/knowledge-bases`        | 获取/创建知识库                       |
+| GET/PATCH/DELETE | `/api/admin/knowledge-bases/[id]`   | 获取/更新/删除知识库                    |
+| GET              | `/api/admin/stats`                  | 获取系统统计                         |
+| GET              | `/api/admin/users`                  | 获取用户列表                         |
+| PATCH/DELETE     | `/api/admin/users/[id]`             | 更新/删除用户                        |
 
 #### Milvus 配置 API 详情
 
@@ -1247,56 +1265,56 @@ AI 配置已整合到系统设置的基本设置中，包括：
 
 ### 问答与搜索 API
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/qa/search` | 向量相似度搜索 |
-| POST | `/api/qa/chat` | AI 对话问答（基于文档） |
-| POST | `/api/qa/sql` | 自然语言转 SQL |
+| 方法   | 路径               | 说明            |
+| ---- | ---------------- | ------------- |
+| POST | `/api/qa/search` | 向量相似度搜索       |
+| POST | `/api/qa/chat`   | AI 对话问答（基于文档） |
+| POST | `/api/qa/sql`    | 自然语言转 SQL     |
 
 ### 测试接口
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
+| 方法              | 路径                   | 说明       |
+| --------------- | -------------------- | -------- |
 | GET/POST/DELETE | `/api/test/retrieve` | 文档检索测试接口 |
 
 ## 环境变量
 
 ### 数据库配置
 
-| 变量名 | 描述 | 默认值 |
-|--------|------|--------|
-| DATABASE_URL | 数据库连接字符串 | - |
-| DB_USER | PostgreSQL 用户名 | postgres |
-| DB_PASSWORD | PostgreSQL 密码 | postgres |
-| DB_NAME | PostgreSQL 数据库名 | intelligent_knowledge_base |
-| DB_PORT | PostgreSQL 端口 | 5432 |
-| DB_HOST | PostgreSQL 主机 | localhost |
+| 变量名           | 描述              | 默认值                          |
+| ------------- | --------------- | ---------------------------- |
+| DATABASE\_URL | 数据库连接字符串        | -                            |
+| DB\_USER      | PostgreSQL 用户名  | postgres                     |
+| DB\_PASSWORD  | PostgreSQL 密码   | postgres                     |
+| DB\_NAME      | PostgreSQL 数据库名 | intelligent\_knowledge\_base |
+| DB\_PORT      | PostgreSQL 端口   | 5432                         |
+| DB\_HOST      | PostgreSQL 主机   | localhost                    |
 
 ### AI 配置
 
-| 变量名 | 描述 | 默认值 |
-|--------|------|--------|
-| DASHSCOPE_API_KEY | 阿里云 DashScope API Key | - |
-| OPENAI_API_KEY | OpenAI API Key | - |
-| OPENAI_BASE_URL | OpenAI Base URL | 可选 |
-| DEEPSEEK_API_KEY | DeepSeek API Key | - |
-| EMBEDDING_PROVIDER | Embedding 提供商 | dashscope |
-| EMBEDDING_MODEL | Embedding 模型名称 | text-embedding-v2 |
-| LLM_PROVIDER | LLM 提供商 | dashscope |
-| LLM_MODEL | LLM 模型名称 | qwen-plus |
-| LLM_TEMPERATURE | LLM 温度参数 | 0.7 |
+| 变量名                 | 描述                    | 默认值               |
+| ------------------- | --------------------- | ----------------- |
+| DASHSCOPE\_API\_KEY | 阿里云 DashScope API Key | -                 |
+| OPENAI\_API\_KEY    | OpenAI API Key        | -                 |
+| OPENAI\_BASE\_URL   | OpenAI Base URL       | 可选                |
+| DEEPSEEK\_API\_KEY  | DeepSeek API Key      | -                 |
+| EMBEDDING\_PROVIDER | Embedding 提供商         | dashscope         |
+| EMBEDDING\_MODEL    | Embedding 模型名称        | text-embedding-v2 |
+| LLM\_PROVIDER       | LLM 提供商               | dashscope         |
+| LLM\_MODEL          | LLM 模型名称              | qwen-plus         |
+| LLM\_TEMPERATURE    | LLM 温度参数              | 0.7               |
 
 ### Milvus 向量数据库配置（可选）
 
-| 变量名 | 描述 | 默认值 |
-|--------|------|--------|
-| MILVUS_ENABLED | 是否启用 Milvus | false |
-| MILVUS_HOST | Milvus 服务器地址 | localhost |
-| MILVUS_PORT | Milvus 服务端口 | 19530 |
-| MILVUS_USERNAME | Milvus 认证用户名 | 空 |
-| MILVUS_PASSWORD | Milvus 认证密码 | 空 |
-| MILVUS_COLLECTION | 向量集合名称 | document_chunks |
-| MILVUS_DIMENSIONS | 向量维度（需与模型匹配） | 1024 |
+| 变量名                | 描述           | 默认值              |
+| ------------------ | ------------ | ---------------- |
+| MILVUS\_ENABLED    | 是否启用 Milvus  | false            |
+| MILVUS\_HOST       | Milvus 服务器地址 | localhost        |
+| MILVUS\_PORT       | Milvus 服务端口  | 19530            |
+| MILVUS\_USERNAME   | Milvus 认证用户名 | 空                |
+| MILVUS\_PASSWORD   | Milvus 认证密码  | 空                |
+| MILVUS\_COLLECTION | 向量集合名称       | document\_chunks |
+| MILVUS\_DIMENSIONS | 向量维度（需与模型匹配） | 1024             |
 
 > ⚠️ **注意**：管理后台配置优先级高于环境变量。建议通过管理后台页面进行配置，配置会保存到数据库的 `system_config` 表中。
 
@@ -1377,7 +1395,7 @@ docker ps -a
 docker logs milvus-standalone
 ```
 
-> 📖 **详细管理命令**：关于 Milvus 的完整管理命令、数据备份恢复、性能监控等，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md)。
+> 📖 **详细管理命令**：关于 Milvus 的完整管理命令、数据备份恢复、性能监控等，请参考 [MILVUS\_SETUP.md](./MILVUS_SETUP.md)。
 
 ## 安全特性
 
@@ -1441,7 +1459,7 @@ rm -f dev.db-journal
 npx prisma migrate dev
 ```
 
-3. 对于 PostgreSQL，确保 Docker 服务正在运行
+1. 对于 PostgreSQL，确保 Docker 服务正在运行
 
 ### 问题 3：文件上传失败
 
@@ -1468,7 +1486,7 @@ npx prisma migrate dev
 2. 检查文档是否有可提取的文本内容
 3. 查看 `uploads` 目录权限
 
-> 📖 **Milvus 故障排除**：关于 Milvus 连接失败、搜索结果异常、数据迁移失败等问题的详细解决方案，请参考 [MILVUS_SETUP.md](./MILVUS_SETUP.md) 中的「故障排除」章节。
+> 📖 **Milvus 故障排除**：关于 Milvus 连接失败、搜索结果异常、数据迁移失败等问题的详细解决方案，请参考 [MILVUS\_SETUP.md](./MILVUS_SETUP.md) 中的「故障排除」章节。
 
 ### 问题 6：Milvus 连接失败
 
@@ -1478,16 +1496,13 @@ npx prisma migrate dev
    ```bash
    docker ps | grep milvus
    ```
-
 2. 检查 Milvus 配置是否正确
    - 主机地址是否正确（默认：localhost）
    - 端口是否正确（默认：19530）
    - 用户名和密码是否正确（如果启用了认证）
-
 3. 测试 Milvus 连接
    - 在管理后台点击「测试连接」按钮
    - 检查网络是否可达
-
 4. 查看 Milvus 日志
    ```bash
    docker logs milvus-standalone
@@ -1502,11 +1517,9 @@ npx prisma migrate dev
    - DashScope `text-embedding-v2`: 1024 维
    - OpenAI `text-embedding-3-small`: 1536 维
    - 如果维度不匹配，需要重新初始化集合并迁移数据
-
 2. **索引未创建**：
    - 点击「初始化集合」按钮确保索引已创建
-   - 系统使用 IVF_FLAT 索引和余弦相似度度量
-
+   - 系统使用 IVF\_FLAT 索引和余弦相似度度量
 3. **集合未加载**：
    - Milvus 集合需要加载到内存才能搜索
    - 初始化集合时会自动加载
@@ -1519,12 +1532,10 @@ npx prisma migrate dev
    - 检查迁移状态中的错误数量
    - 单个向量迁移失败不会影响其他向量
    - 可重新执行迁移，已成功的向量会被更新
-
 2. **内存不足**：
    - 迁移时会批量处理（每次 100 个向量）
    - 如果数据量特别大，考虑分批迁移
    - 使用「迁移单个文档」功能测试
-
 3. **向量数据损坏**：
    - 关系型数据库中的 `embedding` 字段存储的是 JSON 格式
    - 检查是否有无效的 JSON 数据
@@ -1538,11 +1549,9 @@ npx prisma migrate dev
    - 这是由于正则表达式使用零宽度先行断言导致的
    - 已修复：将 `(?=CREATE...)` 改为 `(CREATE...)`
    - 确保使用最新版本的代码
-
 2. **分块过大或过小**：
    - 在「RAG 配置」页面调整 SQL 文档的分块参数
    - 推荐配置：chunkSize=4000, chunkOverlap=0, maxSingleChunkSize=8000
-
 3. **CREATE 语句识别不准确**：
    - SQL 分块策略匹配以下模式：
      - `CREATE TABLE`
@@ -1642,16 +1651,16 @@ npx prisma migrate dev
 
 ## 项目状态
 
-✅ 核心功能已实现  
-✅ 数据库配置完成  
-✅ RAG 功能已实现  
-✅ Text-to-SQL 功能已实现  
-✅ 多 AI 提供商支持  
-✅ 用户角色权限系统  
-✅ 安全测试通过  
-✅ **Milvus 向量数据库集成**  
-✅ **数据迁移工具**  
-✅ **RAG 配置分离（普通文档/SQL 文档）**  
+✅ 核心功能已实现\
+✅ 数据库配置完成\
+✅ RAG 功能已实现\
+✅ Text-to-SQL 功能已实现\
+✅ 多 AI 提供商支持\
+✅ 用户角色权限系统\
+✅ 安全测试通过\
+✅ **Milvus 向量数据库集成**\
+✅ **数据迁移工具**\
+✅ **RAG 配置分离（普通文档/SQL 文档）**
 
 ## 快速使用指南
 
@@ -1670,13 +1679,13 @@ npx prisma migrate dev
      ```bash
      # 进入 prisma 目录
      cd prisma
-     
+
      # 使用 sqlite3 打开数据库
      sqlite3 dev.db
-     
+
      # 查询所有用户
      SELECT id, email, name, role, status, "createdAt" FROM "User" WHERE "deletedAt" IS NULL;
-     
+
      # 退出
      .quit
      ```
@@ -1684,10 +1693,10 @@ npx prisma migrate dev
      ```bash
      # 连接到数据库
      psql -h localhost -U postgres -d intelligent_knowledge_base
-     
+
      # 查询所有用户
      SELECT id, email, name, role, status, "createdAt" FROM "User" WHERE "deletedAt" IS NULL;
-     
+
      # 退出
      \q
      ```
@@ -1716,19 +1725,19 @@ npx prisma migrate dev
 
 ### 用户角色说明
 
-| 角色 | 说明 | 权限 |
-|------|------|------|
-| **ADMIN** | 管理员 | 所有权限 + 用户管理 + 系统设置 |
-| **EDITOR** | 编辑者 | 上传文档、编辑文档、创建知识库 |
-| **VIEWER** | 查看者 | 查看文档、搜索文档 |
+| 角色         | 说明  | 权限                 |
+| ---------- | --- | ------------------ |
+| **ADMIN**  | 管理员 | 所有权限 + 用户管理 + 系统设置 |
+| **EDITOR** | 编辑者 | 上传文档、编辑文档、创建知识库    |
+| **VIEWER** | 查看者 | 查看文档、搜索文档          |
 
 ### 用户状态说明
 
-| 状态 | 说明 |
-|------|------|
-| **PENDING** | 待审核 | 新注册用户，默认状态，需管理员审核 |
-| **ACTIVE** | 正常 | 已激活用户，可正常使用 |
-| **DISABLED** | 禁用 | 被禁用用户，无法登录 |
+| 状态           | 说明  | <br />            |
+| ------------ | --- | ----------------- |
+| **PENDING**  | 待审核 | 新注册用户，默认状态，需管理员审核 |
+| **ACTIVE**   | 正常  | 已激活用户，可正常使用       |
+| **DISABLED** | 禁用  | 被禁用用户，无法登录        |
 
 ### 常用用户查询 SQL
 
@@ -1754,3 +1763,4 @@ UPDATE "User" SET status = 'ACTIVE' WHERE id = 'user-id';
 -- 升级为管理员
 UPDATE "User" SET role = 'ADMIN' WHERE email = 'admin@example.com';
 ```
+

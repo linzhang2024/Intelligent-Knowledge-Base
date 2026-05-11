@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const {
       requirement,
       knowledgeBaseId,
-      dialect = "mysql",
+      dialect = "oracle",
       includeComments = true,
       useAlias = true,
     } = body;

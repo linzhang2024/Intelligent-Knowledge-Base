@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     const {
       requirement,
       knowledgeBaseId,
-      dialect = "mysql",
+      dialect = "oracle",
       streaming = true,
     } = body;
 

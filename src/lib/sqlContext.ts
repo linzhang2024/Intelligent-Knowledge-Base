@@ -32,6 +32,13 @@ export interface RelationMetadata {
   joinCondition?: string | null;
 }
 
+export interface TableDataInfo {
+  tableName: string;
+  columns: string[];
+  rows: string[][];
+  totalRows: number;
+}
+
 export function formatTableContext(
   tables: TableMetadata[],
   relations: RelationMetadata[]
@@ -95,12 +102,64 @@ function getRelationTypeName(type: string): string {
   return mapping[type] || type;
 }
 
+export function formatTableDataValues(dataMap: Map<string, TableDataInfo>): string {
+  if (dataMap.size === 0) return "";
+
+  const parts: string[] = [];
+  parts.push("=== 【表的实际数据值（可用于精确筛选和 CASE WHEN）】 ===");
+  parts.push("");
+  parts.push("以下表在导入的 SQL 文件中包含了实际的 INSERT 数据。");
+  parts.push("在编写 WHERE 条件或 CASE WHEN 映射时，必须使用下面列出的精确值。");
+  parts.push("");
+
+  for (const [tableName, dataInfo] of dataMap.entries()) {
+    const maxDisplayRows = 50;
+    const displayRows = dataInfo.rows.slice(0, maxDisplayRows);
+
+    parts.push(`【表名】${dataInfo.tableName}`);
+    parts.push(`【字段】${dataInfo.columns.join(", ")}`);
+    parts.push(`【数据行数】共 ${dataInfo.totalRows} 行${dataInfo.totalRows > maxDisplayRows ? `（以下展示前 ${maxDisplayRows} 行）` : ""}`);
+    parts.push("");
+
+    if (displayRows.length === 0) continue;
+
+    const colWidths = dataInfo.columns.map((col, ci) => {
+      const headerLen = col.length;
+      let maxDataLen = 0;
+      for (const row of displayRows) {
+        const val = (row[ci] || "").replace(/^'|'$/g, "");
+        if (val.length > maxDataLen) maxDataLen = val.length;
+      }
+      return Math.max(headerLen, Math.min(maxDataLen, 30));
+    });
+
+    const headerLine = "| " + dataInfo.columns.map((col, i) => col.padEnd(colWidths[i])).join(" | ") + " |";
+    const separatorLine = "|" + colWidths.map(w => "-".repeat(w + 2)).join("|") + "|";
+
+    parts.push(headerLine);
+    parts.push(separatorLine);
+
+    for (const row of displayRows) {
+      const rowLine = "| " + row.map((val, i) => {
+        const display = (val || "NULL").replace(/^'|'$/g, "");
+        return display.padEnd(colWidths[i]);
+      }).join(" | ") + " |";
+      parts.push(rowLine);
+    }
+
+    parts.push("");
+  }
+
+  return parts.join("\n");
+}
+
 import { SearchResult } from "@/lib/vectorStore";
 
 export function buildSQLPromptContext(
   tables: TableMetadata[],
   relations: RelationMetadata[],
-  searchResults: SearchResult[]
+  searchResults: SearchResult[],
+  tableData?: Map<string, TableDataInfo>
 ): string {
   const parts: string[] = [];
 
@@ -118,6 +177,10 @@ export function buildSQLPromptContext(
       parts.push("---");
       parts.push("");
     }
+  }
+
+  if (tableData && tableData.size > 0) {
+    parts.push(formatTableDataValues(tableData));
   }
 
   parts.push(formatTableContext(tables, relations));

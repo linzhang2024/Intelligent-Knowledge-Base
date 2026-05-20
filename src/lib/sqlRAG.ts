@@ -6,6 +6,7 @@ import {
   TableMetadata,
   ColumnMetadata,
   RelationMetadata,
+  TableDataInfo,
   formatTableContext,
   buildSQLPromptContext,
 } from "./sqlContext";
@@ -26,7 +27,7 @@ export class NoMatchingTablesError extends Error {
   }
 }
 
-const SQL_GENERATION_SYSTEM_PROMPT = `你是一个专业的医疗行业HIS系统SQL开发专家，擅长根据医院业务需求编写高质量的SQL查询语句。
+const SQL_GENERATION_SYSTEM_PROMPT = `你是一个专业的中联HIS系统运维专家，擅长根据医院业务需求编写高质量的SQL查询语句。
 默认SQL方言：Oracle
 
 ## 医疗行业业务背景
@@ -51,7 +52,14 @@ const SQL_GENERATION_SYSTEM_PROMPT = `你是一个专业的医疗行业HIS系统
 
 ## 核心原则（必须严格遵守）
 
-1. **严禁幻觉字段名**：你只能使用上下文【可用表结构】中明确列出的表名和字段名。如果需求中提到的字段在上下文中不存在，你必须在回答中明确说明"未找到字段XXX"，而不是编造一个字段名。
+1. **严禁任何形式的幻觉和编造——一切必须有依据**：
+   这是最高优先级的原则，违反此原则的输出等同于废品。
+   
+   - **表名**：只能使用上下文【可用表结构】中明确列出的表名。如果需求中提到的表在上下文中不存在，必须明确说明"未找到表XXX"，严禁编造表名。
+   - **字段名**：只能使用上下文【可用表结构】中明确列出的字段名。如果需求中提到的字段在上下文中不存在，必须明确说明"未找到字段XXX"，严禁编造字段名。
+   - **字段值**：如果上下文【表的实际数据值】中提供了该表的 INSERT 数据，则 WHERE 条件或 CASE WHEN 中使用的值必须在这些数据中存在，严禁使用不存在的编码值。
+   - **表关系**：表之间的 JOIN 必须基于上下文【表关系】中提供的关联字段，严禁自己臆断关联条件。
+   - **每一个 SQL 元素都要能指出它在上下文中的出处**。如果你不确定某个表名/字段名/值是否存在，宁可标注"不确定"也不要猜。
 
 2. **使用真实表关系**：表之间的关联必须使用上下文【表关系】中提供的关联字段，严禁编造JOIN条件。
 
@@ -61,6 +69,67 @@ const SQL_GENERATION_SYSTEM_PROMPT = `你是一个专业的医疗行业HIS系统
    - 用注释标记不确定的部分
 
 4. **医疗业务适配**：生成的SQL必须符合医院业务逻辑，如患者信息保密、费用精确计算、时间区间准确等。
+
+5. **每个筛选条件必须在 SQL 中写清楚依据（内部规范，不在查询结果中体现）**：
+   本系统的筛选依据逻辑仅用于确保 SQL 质量，**不要**在 SELECT 结果列中使用"筛选依据_"前缀命名。
+   
+   #### 具体要求：
+   - **字典表/编码表，必须 JOIN 并输出名称**：如果 WHERE 中用到了编码字段，必须 JOIN 该字典表，在 SELECT 中输出对应的名称字段（直接用字段原名或简短别名即可，不要加"筛选依据_"前缀）。
+   
+   - **SQL 中必须用注释标注筛选值的来源**：每个 WHERE 条件涉及的编码值，必须在旁边用 -- 注释写清楚：**该值是从哪个字典表的哪个字段得出的**。格式为：
+     -- 来源于字典表"表名.字段名"，对应"[名称]"
+   
+   - **示例1（编码字典表）**：
+     
+     SELECT
+       患者信息.*,
+       最高诊断依据.名称
+     FROM 患者信息
+     LEFT JOIN 最高诊断依据 ON 患者信息.诊断依据编码 = 最高诊断依据.编码
+     WHERE 最高诊断依据.编码 IN ('6', '7')
+       -- 来源于字典表"最高诊断依据.编码"，'6'对应"病理(继发)"，'7'对应"病理(原发)"
+
+   - **示例2（固定值筛选，必须标注来源）**：如果需求是"查询处方类型为1的处方"，SQL 必须写清楚"1"是从哪个字典表的哪个字段来的：
+     
+     SELECT
+       处方.*,
+       处方类型.名称
+     FROM 处方
+     LEFT JOIN 处方类型 ON 处方.处方类型编码 = 处方类型.编码
+     WHERE 处方.处方类型编码 = '1'
+       -- 来源于字典表"处方类型.编码"，'1'对应"西药处方"
+     
+     而不是只写 WHERE 处方类型编码 = '1'（没有人知道1是什么意思，也不知道1是从哪个表查出来的）。
+
+6. **SQL 编写完成后必须自我核对语法和方言（质量保障）**：
+   在输出最终 SQL 之前，你必须逐条检查以下项，确保零语法错误：
+
+   #### 核对清单：
+   - **关键字拼写**：SELECT、FROM、WHERE、JOIN、GROUP BY、ORDER BY 等关键字是否有拼写错误。
+   - **逗号检查**：SELECT 列之间是否用逗号分隔，最后一列后面是否没有多余逗号。
+   - **括号配对**：子查询、函数调用的括号是否成对闭合。
+   - **别名语法**：Oracle 方言中表别名不要加 AS（如 FROM 表名 别名），列别名可用 AS。
+   - **JOIN 语法**：ON 条件是否完整，是否有孤立的逗号或缺少关键字。
+   - **方言一致性**：
+     - Oracle：分页用 ROWNUM 或 ROW_NUMBER() OVER()，不能用 LIMIT；日期用 TO_DATE() 或 DATE 'YYYY-MM-DD'；字符串拼接用 ||；空值判断用 NVL()。
+     - MySQL：分页用 LIMIT；字符串拼接用 CONCAT()；空值判断用 IFNULL()。
+     - PostgreSQL：分页用 LIMIT ... OFFSET；字符串拼接用 ||；空值判断用 COALESCE()。
+     - SQL Server：分页用 TOP 或 OFFSET FETCH；字符串拼接用 +；空值判断用 ISNULL()。
+   - **GROUP BY 完整性**：SELECT 中的非聚合列是否都在 GROUP BY 中。
+   - **表名/字段名存在性**：使用的所有表名和字段名是否都在上下文【可用表结构】中存在。
+   - **注释格式**：-- 注释是否语法正确，不会意外注释掉后续代码。
+
+   如果发现任何语法错误或方言不匹配，必须修正后再输出。在【注意事项】中应明确写"已核对语法和方言，无误"或列出修正项。
+
+7. **多来源数据必须交叉参照，互相借鉴补全（信息融合）**：
+   当向量检索返回了多条匹配结果（多条文档片段、多张相关表）时，你必须：
+   
+   - **通读所有检索结果**：不要只看第一条，要把所有返回的文档片段和表结构都通读一遍。
+   - **找出关联关系**：不同检索结果之间可能存在隐式关联（如同一张表的不同文档片段、不同表之间的外键关系、同一业务场景的互补信息），你必须识别这些关联。
+   - **互相借鉴补全**：如果在文档A中找到了表结构信息，在文档B中找到了该表的 INSERT 数据值，就把两者结合使用。如果一张表的字段注释揭示了它与另一张表的关系，就用这个关系来写 JOIN。
+   - **不要遗漏任何有用信息**：在生成 SQL 时，要充分利用所有检索到的上下文，而不是只依赖单条结果。
+   
+   在【注意事项】中应说明：本次参考了哪些检索结果、它们之间有哪些关联被利用。
 
 ## SQL编写规范
 
@@ -115,7 +184,7 @@ SELECT ...
 **逻辑解释**：
 1. 查询哪些表
 2. 关联条件是什么
-3. 筛选条件有哪些
+3. 筛选条件有哪些，每个筛选字段的筛选依据是什么
 4. 聚合/分组方式
 5. 排序/分页
 
@@ -132,7 +201,7 @@ SELECT ...
 **逻辑解释**：
 1. 查询哪些表
 2. 关联条件是什么
-3. 筛选条件有哪些
+3. 筛选条件有哪些，每个筛选字段的筛选依据是什么
 4. 聚合/分组方式
 5. 排序/分页
 
@@ -149,7 +218,7 @@ SELECT ...
 **逻辑解释**：
 1. 查询哪些表
 2. 关联条件是什么
-3. 筛选条件有哪些
+3. 筛选条件有哪些，每个筛选字段的筛选依据是什么
 4. 聚合/分组方式
 5. 排序/分页
 
@@ -178,14 +247,30 @@ SELECT ...
 - 性能优化：[如有必要，提出性能优化建议]
 - 索引建议：[如涉及大表查询，提出索引建议]
 
+**【语法与方言核对】**
+- ✅ / ❌ 关键字拼写检查：[结果]
+- ✅ / ❌ 逗号/括号检查：[结果]
+- ✅ / ❌ 方言一致性（当前为 Oracle）：[结果，如 LIMIT 误用、日期函数不对等]
+- ✅ / ❌ GROUP BY 完整性：[结果]
+- ✅ / ❌ 表名/字段名存在性：[结果]
+- 修正项：[如有修正，列出修改了什么；如无误，写"已核对，无误"]
+
 **【特别说明】**
 - [如有特殊假设或不确定的地方，在此说明]
 
 ## 重要提醒
 
-在编写SQL之前，先仔细阅读上下文中的【可用表结构】和【表关系】。
-每使用一个表或字段，都要确认它确实存在于上下文中。
-如果需求中提到的表名或字段名与上下文中不完全一致，请选择最相似的那个，并在【注意事项】中说明映射关系。`;
+**在编写SQL之前**，先仔细阅读上下文中的所有章节：语义检索结果、表的实际数据值、可用表结构、表关系、字段映射参考。
+
+**每使用一个表、一个字段、一个编码值**，都要确认它在上下文中确实存在：
+- 表名 → 必须在【可用表结构】中有
+- 字段名 → 必须在对应表的字段列表中有
+- 编码值 → 如果涉及字典表编码，必须在【表的实际数据值】中有
+- 关联条件 → 必须在【表关系】中有
+
+**如果找不到依据，宁可标注缺失，绝不自编。** 一个凭空编造的表名或字段名会直接导致 SQL 执行失败。
+
+**如果需求中提到的表名或字段名与上下文中不完全一致**，请选择最相似的那个，并在【注意事项】中说明映射关系。`;
 
 export interface SQLElements {
   tables: string[];
@@ -429,14 +514,141 @@ function extractTableNamesFromQuery(
   return tableNames;
 }
 
+function parseInsertValues(valuesStr: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuote = false;
+
+  for (let i = 0; i < valuesStr.length; i++) {
+    const char = valuesStr[i];
+
+    if (char === "'") {
+      if (inQuote && valuesStr[i + 1] === "'") {
+        current += "'";
+        i++;
+      } else {
+        inQuote = !inQuote;
+        current += char;
+      }
+    } else if (char === "," && !inQuote) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  if (current.trim()) {
+    result.push(current.trim());
+  }
+
+  return result;
+}
+
+async function extractTableDataValues(
+  tables: TableMetadata[],
+  knowledgeBaseId?: string
+): Promise<Map<string, TableDataInfo>> {
+  const tableDataMap = new Map<string, TableDataInfo>();
+
+  if (tables.length === 0) return tableDataMap;
+
+  const whereClause: Record<string, unknown> = {
+    id: { in: tables.map((t) => t.id) },
+  };
+  if (knowledgeBaseId) {
+    whereClause.knowledgeBaseId = knowledgeBaseId;
+  }
+
+  const tableRecords = await prisma.databaseTable.findMany({
+    where: whereClause,
+    select: {
+      id: true,
+      name: true,
+      documentId: true,
+    },
+  });
+
+  const docTableMap = new Map<
+    string,
+    { tableId: string; tableName: string }[]
+  >();
+  for (const tr of tableRecords) {
+    if (!tr.documentId) continue;
+    if (!docTableMap.has(tr.documentId)) {
+      docTableMap.set(tr.documentId, []);
+    }
+    docTableMap.get(tr.documentId)!.push({
+      tableId: tr.id,
+      tableName: tr.name,
+    });
+  }
+
+  const MAX_COLUMNS = 8;
+  const MAX_ROWS = 100;
+
+  for (const [docId, tableRefs] of docTableMap.entries()) {
+    const document = await prisma.document.findUnique({
+      where: { id: docId },
+      select: { content: true },
+    });
+
+    if (!document?.content) continue;
+
+    for (const { tableName } of tableRefs) {
+      const escapedName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const insertRegex = new RegExp(
+        `insert\\s+into\\s+(?:[\\w]+\\.)?["\`]?${escapedName}["\`]?\\s*\\(([^)]+)\\)\\s*values\\s*\\(([^)]+(?:\\([^)]*\\)[^)]*)*)\\)`,
+        "gi"
+      );
+
+      const columns: string[] = [];
+      const rows: string[][] = [];
+
+      let match: RegExpExecArray | null;
+      while ((match = insertRegex.exec(document.content)) !== null) {
+        if (columns.length === 0) {
+          const colNames = match[1]
+            .split(",")
+            .map((c) => c.trim().replace(/["'`]/g, ""));
+          columns.push(...colNames);
+        }
+
+        if (columns.length > MAX_COLUMNS) break;
+
+        const values = parseInsertValues(match[2]);
+        rows.push(values);
+
+        if (rows.length >= MAX_ROWS) break;
+      }
+
+      if (rows.length > 0 && columns.length <= MAX_COLUMNS) {
+        tableDataMap.set(tableName.toLowerCase(), {
+          tableName,
+          columns,
+          rows,
+          totalRows: rows.length,
+        });
+      }
+    }
+  }
+
+  console.log(
+    `[SQL RAG] 提取到 ${tableDataMap.size} 个表的数据值: ${Array.from(tableDataMap.keys()).join(", ")}`
+  );
+
+  return tableDataMap;
+}
+
 function buildSQLGenerationPrompt(
   userQuery: string,
   tables: TableMetadata[],
   relations: RelationMetadata[],
   searchResults: SearchResult[],
-  dialect: string = "mysql"
+  dialect: string = "mysql",
+  tableData?: Map<string, TableDataInfo>
 ): BaseMessage[] {
-  const context = buildSQLPromptContext(tables, relations, searchResults);
+  const context = buildSQLPromptContext(tables, relations, searchResults, tableData);
 
   const dialectNote =
     dialect === "mysql"
@@ -669,12 +881,15 @@ export async function generateSQLWithRAG(
     };
   }
 
+  const tableData = await extractTableDataValues(tables, knowledgeBaseId);
+
   const messages = buildSQLGenerationPrompt(
     userQuery,
     tables,
     relations,
     searchResults,
-    dialect
+    dialect,
+    tableData
   );
 
   const config = await getAIConfig();
@@ -733,12 +948,15 @@ export async function generateSQLWithRAGStream(
     `[SQL RAG] 检索到 ${tables.length} 个相关表, ${relations.length} 个关联关系`
   );
 
+  const tableData = await extractTableDataValues(tables, knowledgeBaseId);
+
   const messages = buildSQLGenerationPrompt(
     userQuery,
     tables,
     relations,
     searchResults,
-    dialect
+    dialect,
+    tableData
   );
 
   const config = await getAIConfig();

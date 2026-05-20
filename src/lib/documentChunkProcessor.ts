@@ -96,17 +96,44 @@ export function splitSQLIntoChunks(text: string): string[] {
     return [];
   }
 
-  const pattern =
+  const createPattern =
     /(CREATE\s+(OR\s+REPLACE\s+)?(TABLE|FUNCTION|PROCEDURE|PACKAGE|VIEW|INDEX|TRIGGER|SYNONYM|SEQUENCE|TYPE|CONTEXT|DIRECTORY|JAVA))/gi;
   const positions: number[] = [];
   let match: RegExpExecArray | null;
 
-  while ((match = pattern.exec(text)) !== null) {
+  while ((match = createPattern.exec(text)) !== null) {
     positions.push(match.index);
   }
 
   if (positions.length === 0) {
-    return [text];
+    const importPattern =
+      /(prompt\s+(Importing|Dropping|Creating)\s+table)|(DROP\s+(TABLE|FUNCTION|PROCEDURE|PACKAGE|VIEW|INDEX|TRIGGER|SYNONYM|SEQUENCE|TYPE)\s+)/gi;
+    const importPositions: number[] = [];
+    let importMatch: RegExpExecArray | null;
+
+    while ((importMatch = importPattern.exec(text)) !== null) {
+      importPositions.push(importMatch.index);
+    }
+
+    if (importPositions.length === 0) {
+      return splitLargeChunkOnInserts(text);
+    }
+
+    const chunks: string[] = [];
+    for (let i = 0; i < importPositions.length; i++) {
+      const start = importPositions[i];
+      const end = importPositions[i + 1] || text.length;
+      const chunk = text.substring(start, end).trim();
+      if (chunk) {
+        const subChunks = splitLargeChunkOnInserts(chunk);
+        chunks.push(...subChunks);
+      }
+    }
+
+    if (chunks.length === 0) {
+      return splitLargeChunkOnInserts(text);
+    }
+    return chunks;
   }
 
   const chunks: string[] = [];
@@ -120,6 +147,54 @@ export function splitSQLIntoChunks(text: string): string[] {
   }
 
   return chunks;
+}
+
+function splitLargeChunkOnInserts(text: string): string[] {
+  const MAX_CHUNK_SIZE = 6000;
+  if (text.length <= MAX_CHUNK_SIZE) {
+    return [text];
+  }
+
+  const insertPattern = /(?:^|\n)\s*insert\s+into\s+/gi;
+  const insertPositions: number[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = insertPattern.exec(text)) !== null) {
+    insertPositions.push(match.index);
+  }
+
+  if (insertPositions.length <= 1) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  let currentChunk = '';
+  let currentSize = 0;
+
+  for (let i = 0; i < insertPositions.length; i++) {
+    const start = insertPositions[i];
+    const end = i < insertPositions.length - 1 ? insertPositions[i + 1] : text.length;
+    const block = text.substring(start, end).trim();
+
+    if (!block) continue;
+
+    if (currentSize + block.length > MAX_CHUNK_SIZE && currentSize > 0) {
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+      }
+      currentChunk = block;
+      currentSize = block.length;
+    } else {
+      currentChunk = currentChunk ? currentChunk + '\n' + block : block;
+      currentSize += block.length + 1;
+    }
+  }
+
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks.length > 0 ? chunks : [text];
 }
 
 async function processChunksWithErrorHandlingInternal(
